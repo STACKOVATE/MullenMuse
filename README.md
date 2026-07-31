@@ -1,7 +1,7 @@
 # MullMuse（筹思）
 
 > 一个让多个AI同时回答同一个问题的趣味聊天室。  
-> 智谱、DeepSeek、OpenRouter……谁的回答更懂你？比一比就知道！
+> 智谱、OpenRouter……谁的回答更懂你？比一比就知道！
 
 ![Vue](https://img.shields.io/badge/Vue-3.0-green.svg)
 ![Vite](https://img.shields.io/badge/Vite-6.0-blue.svg)
