@@ -35,7 +35,7 @@ import { ref } from 'vue'
 const ZHIPU_API_KEY = import.meta.env.VITE_ZHIPU_KEY
 
 const messages = ref([
-  { role: 'assistant', content: '你好！我是 MullMuse，基于智谱AI，有什么可以帮你的？' }
+  { role: 'assistant', content: '你好！我是 MullenMuse' }
 ])
 const inputText = ref('')
 const loading = ref(false)
@@ -46,7 +46,7 @@ const sendMessage = async () => {
   if (!ZHIPU_API_KEY) {
     messages.value.push({
       role: 'assistant',
-      content: '未找到智谱AI密钥。'
+      content: '未找到密钥。'
     })
     return
   }
