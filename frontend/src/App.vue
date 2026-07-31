@@ -7,7 +7,7 @@
       <a class="made-by" href="https://stackovate.github.io" target="_blank" rel="noopener noreferrer">Made by STACKOVATE Studio</a>
     </div>
 
-    <div class="chat-box">
+    <div class="chat-box" ref="chatBox">
       <div v-for="(msg, index) in messages" :key="index" class="message-wrapper">
         <!-- 用户消息 -->
         <div v-if="msg.role === 'user'" class="message user-message">
@@ -126,17 +126,40 @@ const sendMessage = async () => {
   await nextTick()
   chatBox.value.scrollTop = chatBox.value.scrollHeight
 
-  // 构建并行请求任务列表（增强：检查 HTTP 状态、记录原始响应并改善空返回处理）
-  const tasks = enabledAIs.value.map(async (key) => {
-    const config = AI_CONFIGS[key]
-    if (!config.key) {
-      return {
-        success: false,
-        aiName: config.name,
-        content: '❌ 未配置密钥，请在.env中设置',
-        color: config.color
-      }
+  const totalAI = enabledAIs.value.length
+  let finishedCount = 0
+
+  // 辅助函数：检查是否所有 AI 都处理完了
+  const checkLoadingDone = () => {
+    if (finishedCount === totalAI) {
+      loading.value = false
     }
+  }
+
+  await nextTick()
+  chatBox.value.scrollTop = chatBox.value.scrollHeight
+
+  // ---------- 核心：每个 AI 独立请求，带超时控制 ----------
+  enabledAIs.value.forEach(async (key) => {
+    const config = AI_CONFIGS[key]
+
+    // 1. 检查密钥
+    if (!config.key) {
+      messages.value.push({
+        role: 'assistant',
+        aiName: config.name,
+        content: '❌ 未配置密钥',
+        color: config.color
+      })
+      finishedCount++
+      checkLoadingDone()
+      return
+    }
+
+    // 2. 创建 AbortController，设置 15 秒超时
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 15000)
+
     try {
       const response = await fetch(config.url, {
         method: 'POST',
@@ -150,70 +173,54 @@ const sendMessage = async () => {
             { role: 'system', content: '请用中文简洁回答。' },
             { role: 'user', content: userQuestion }
           ]
-        })
+        }),
+        signal: controller.signal
       })
 
-      // 读取原始文本以便兼容不同提供方的返回格式，并记录以便调试
+      clearTimeout(timeoutId)
+
       const rawText = await response.text()
       let data = null
       try { data = rawText ? JSON.parse(rawText) : null } catch (e) { data = null }
       console.log(`[AI:${config.name}] status=${response.status}`, data || rawText)
 
       if (!response.ok) {
-        // 返回非 2xx，直接作为失败信息返回
-        return {
-          success: false,
+        messages.value.push({
+          role: 'assistant',
           aiName: config.name,
           content: `❌ ${response.status} ${rawText}`,
           color: config.color
-        }
-      }
-
-      // 支持多种可能的响应字段，同时优先取非空字符串
-      const reply = (data?.choices?.[0]?.message?.content || data?.result || data?.output?.[0]?.content || rawText || '').toString().trim()
-      return {
-        success: true,
-        aiName: config.name,
-        content: reply || '⚠️ 返回内容为空',
-        color: config.color
+        })
+      } else {
+        const reply = (data?.choices?.[0]?.message?.content || data?.result || data?.output?.[0]?.content || rawText || '').toString().trim()
+        messages.value.push({
+          role: 'assistant',
+          aiName: config.name,
+          content: reply || '⚠️ 返回内容为空',
+          color: config.color
+        })
       }
     } catch (error) {
-      return {
-        success: false,
-        aiName: config.name,
-        content: `❌ 请求失败：${error.message}`,
-        color: config.color
+      let errorMsg = '请求失败'
+      if (error.name === 'AbortError') {
+        errorMsg = '⏰ 请求超时（超过15秒），请稍后重试'
+      } else {
+        errorMsg = `❌ 网络错误：${error.message}`
       }
-    }
-  })
-
-  // 关键：Promise.allSettled 让所有请求同时进行，互不等待
-  const results = await Promise.allSettled(tasks)
-
-  // 收集所有AI的回复（按顺序添加）
-  results.forEach((result) => {
-    if (result.status === 'fulfilled') {
-      const data = result.value
       messages.value.push({
         role: 'assistant',
-        aiName: data.aiName,
-        content: data.content,
-        color: data.color
+        aiName: config.name,
+        content: errorMsg,
+        color: config.color
       })
-    } else {
-      // 理论上不会走到这里，因为内部已catch
-      messages.value.push({
-        role: 'assistant',
-        aiName: '未知AI',
-        content: '❌ 未知错误',
-        color: '#999'
-      })
+    } finally {
+      finishedCount++
+      clearTimeout(timeoutId)
+      await nextTick()
+      chatBox.value.scrollTop = chatBox.value.scrollHeight
+      checkLoadingDone()
     }
   })
-
-  loading.value = false
-  await nextTick()
-  chatBox.value.scrollTop = chatBox.value.scrollHeight
 }
 </script>
 
