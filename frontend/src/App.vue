@@ -1,6 +1,6 @@
 <template>
   <div class="chat-container">
-    <h1 style="text-align:center; color:#409EFF;">MullMuse</h1>
+    <h1 style="text-align:center; color:#409EFF;">MullenMuse</h1>
 
     <div class="chat-box">
       <div v-for="(msg, index) in messages" :key="index" class="message-wrapper">
