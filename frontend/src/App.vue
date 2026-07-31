@@ -46,7 +46,7 @@ const sendMessage = async () => {
   if (!ZHIPU_API_KEY) {
     messages.value.push({
       role: 'assistant',
-      content: '未找到智谱AI密钥，请在 frontend/.env 中设置 VITE_ZHIPU_KEY 并重启开发服务器。'
+      content: '未找到智谱AI密钥。'
     })
     return
   }
