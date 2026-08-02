@@ -1,4 +1,4 @@
-# MullMuse（筹思）
+# MullenMuse（筹思）
 
 > 一个让多个AI同时回答同一个问题的趣味聊天室。  
 > 智谱、OpenRouter……谁的回答更懂你？比一比就知道！

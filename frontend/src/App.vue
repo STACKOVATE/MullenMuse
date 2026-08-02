@@ -4,7 +4,8 @@
 
     <div class="top-nav">
       <div class="nav-divider" aria-hidden="true"></div>
-      <a class="made-by" href="https://stackovate.github.io" target="_blank" rel="noopener noreferrer">Made by STACKOVATE Studio</a>
+      <a class="made-by" href="https://stackovate.github.io" target="_blank" rel="noopener noreferrer">Made by
+        STACKOVATE Studio</a>
     </div>
 
     <div class="chat-box" ref="chatBox">
@@ -16,8 +17,11 @@
         <!-- AI消息（带标签） -->
         <div v-else class="message ai-message">
           <div class="bubble ai-bubble">
-            <span class="ai-tag" :style="{ background: msg.color || '#409EFF' }">{{ msg.aiName }}</span>
-            {{ msg.content }}
+            <span class="ai-tag" :style="{ background: msg.color || '#409EFF' }">
+              {{ msg.aiName }}
+            </span>
+            <!-- 关键改动：用 v-html 渲染 Markdown，保留标签样式 -->
+            <span class="markdown-body" v-html="md.render(msg.content)"></span>
           </div>
         </div>
       </div>
@@ -41,13 +45,8 @@
         </div>
       </div>
 
-      <input 
-        v-model="inputText" 
-        placeholder="输入你的问题..." 
-        @keyup.enter="sendMessage"
-        :disabled="loading || enabledAIs.length === 0"
-        class="chat-input"
-      />
+      <input v-model="inputText" placeholder="输入你的问题..." @keyup.enter="sendMessage"
+        :disabled="loading || enabledAIs.length === 0" class="chat-input" />
       <button @click="sendMessage" :disabled="loading || enabledAIs.length === 0" class="send-btn">
         {{ loading ? '发送中' : '发送' }}
       </button>
@@ -58,6 +57,21 @@
 
 <script setup>
 import { ref, nextTick, onMounted, onBeforeUnmount } from 'vue'
+import MarkdownIt from 'markdown-it'
+import texmath from 'markdown-it-texmath'
+import katex from 'katex'
+import 'katex/dist/katex.min.css'  // 引入 KaTeX 样式
+
+// 创建 markdown-it 实例，启用数学插件
+const md = new MarkdownIt()
+  .use(texmath, {
+    engine: katex,
+    delimiters: ['dollars', 'display'],
+    // 支持 $...$ 行内公式 和 $$...$$ 块级公式
+  })
+
+
+
 
 // ---------- 1. AI配置中心（在这里加新AI） ----------
 const AI_CONFIGS = {
@@ -81,8 +95,32 @@ const AI_CONFIGS = {
     key: import.meta.env.VITE_OPENROUTER_KEY,
     model: 'openai/gpt-oss-20b:free',
     color: '#00B894' // 绿色
-  }
+  },
+  Gemma: {
+    name: 'Gemma-4-26B',
+    url: 'https://openrouter.ai/api/v1/chat/completions',
+    key: import.meta.env.VITE_OPENROUTER_KEY,
+    model: 'google/gemma-4-26b-a4b-it:free',
+    color: '#FFC107' // 黄色
+  },
+  Poolside: {
+    name: 'Laguna S 2.1',
+    url: 'https://openrouter.ai/api/v1/chat/completions',
+    key: import.meta.env.VITE_OPENROUTER_KEY,
+    model: 'poolside/laguna-s-2.1:free',
+    color: '#FF69B4' // 粉色
+  },
+  nvidia: {
+    name: 'Nemotron 3 Ultra 550B',
+    url: 'https://openrouter.ai/api/v1/chat/completions',
+    key: import.meta.env.VITE_OPENROUTER_KEY,
+    model: 'nvidia/nemotron-3-ultra-550b-a55b:free',
+    color: '#FFA500' // 橙色
+  },
 }
+
+
+
 
 // ---------- 2. 状态变量 ----------
 const messages = ref([
@@ -92,7 +130,7 @@ const inputText = ref('')
 const loading = ref(false)
 const chatBox = ref(null)
 
-// 默认勾选前两个（智谱和DeepSeek），你也可以全选
+
 const enabledAIs = ref(['zhipu', 'deepseek'])
 
 // 汉堡菜单状态
@@ -170,7 +208,7 @@ const sendMessage = async () => {
         body: JSON.stringify({
           model: config.model,
           messages: [
-            { role: 'system', content: '请用中文简洁回答。' },
+            { role: 'system', content: '请用中文回答。行内公式请用 $...$ 包裹，块级公式请用 $$...$$ 包裹。' },
             { role: 'user', content: userQuestion }
           ]
         }),
@@ -224,6 +262,6 @@ const sendMessage = async () => {
 }
 </script>
 
-<style scoped>
+<style>
 @import './styles/chat.css';
 </style>

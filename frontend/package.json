@@ -13,6 +13,9 @@
     "format": "prettier --write --experimental-cli src/"
   },
   "dependencies": {
+    "katex": "^0.18.1",
+    "markdown-it": "^15.0.0",
+    "markdown-it-texmath": "^1.0.0",
     "vue": "^3.5.40"
   },
   "devDependencies": {
@@ -20,11 +23,9 @@
     "@vitejs/plugin-vue": "^6.0.8",
     "eslint": "^10.7.0",
     "eslint-config-prettier": "^10.1.8",
-    
     "eslint-plugin-vue": "~10.9.2",
     "globals": "^17.7.0",
     "npm-run-all2": "^9.0.2",
-    
     "prettier": "3.9.5",
     "vite": "^8.1.5",
     "vite-plugin-vue-devtools": "^8.1.5",
