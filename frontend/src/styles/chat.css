@@ -260,7 +260,7 @@
     margin: 6px 0;
 }
 
-.markdown-body code {
+.markdown-body code:not(pre code) {
     display: inline-block;
     background: rgba(255, 255, 255, 0.08);
     padding: 2px 6px;
@@ -272,20 +272,25 @@
 }
 
 .markdown-body pre {
-    background: rgba(255, 255, 255, 0.06);
-    color: #f8f8f2;
-    padding: 14px;
-    border-radius: 12px;
+    background: #1e1e1e;
+    color: #d4d4d4;
+    padding: 14px 18px;
+    border-radius: 8px;
     overflow-x: auto;
-    margin: 8px 0;
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+    font-size: 13px;
+    line-height: 1.6;
+    margin: 12px 0;
 }
 
 .markdown-body pre code {
     background: transparent;
     padding: 0;
     color: inherit;
-    font-size: 13px;
+    font-size: inherit;
+    font-family: inherit;
+    white-space: pre-wrap;
+    word-break: break-word;
 }
 
 .markdown-body blockquote {
@@ -344,41 +349,4 @@
 }
 .chat-container .markdown-body table thead {
     background-color: rgba(255,255,255,0.03) !important;
-}
-
-/* ---------- 代码块样式 ---------- */
-.markdown-body pre {
-    background: #1e1e1e;
-    /* 深色背景 */
-    color: #d4d4d4;
-    /* 亮色文字 */
-    padding: 14px 18px;
-    border-radius: 8px;
-    overflow-x: auto;
-    font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
-    font-size: 13px;
-    line-height: 1.6;
-    margin: 12px 0;
-}
-
-.markdown-body pre code {
-    background: transparent;
-    /* 去掉预置的浅色背景 */
-    padding: 0;
-    color: inherit;
-    font-size: inherit;
-    font-family: inherit;
-    white-space: pre-wrap;
-    /* 长代码自动换行 */
-    word-break: break-word;
-}
-
-/* 行内代码（单个反引号） */
-.markdown-body code:not(pre code) {
-    background: #f0f2f5;
-    padding: 2px 6px;
-    border-radius: 4px;
-    font-family: 'Courier New', monospace;
-    font-size: 13px;
-    color: #e74c3c;
 }
