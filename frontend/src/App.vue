@@ -74,6 +74,19 @@ const md = new MarkdownIt()
 
 
 // ---------- 1. AI配置中心（在这里加新AI） ----------
+
+
+/**
+新名字: {
+  name: '显示名称',
+  url: 'https://openrouter.ai/api/v1/chat/completions',  
+  key: import.meta.env.VITE_OPENROUTER_KEY,
+  model: '厂商/模型名:free',  
+  color: '#颜色代码'
+}
+ */
+
+
 const AI_CONFIGS = {
   zhipu: {
     name: '智谱GLM',
@@ -155,8 +168,18 @@ const sendMessage = async () => {
     alert('请至少勾选一个AI！')
     return
   }
-
+  
   const userQuestion = inputText.value
+
+  // ---------- 构建历史消息（保留最近10条，排除初始欢迎语） ----------
+  const historyMessages = messages.value
+    .filter(msg => !(msg.role === 'assistant' && msg.content === '选择AI后提问，他们会同时回答')) // 去掉欢迎语
+    .slice(-10) // 只保留最近10条，防止token超限
+    .map(msg => ({
+      role: msg.role,
+      content: msg.content
+    }))
+
   // 添加用户消息
   messages.value.push({ role: 'user', content: userQuestion })
   inputText.value = ''
@@ -209,6 +232,7 @@ const sendMessage = async () => {
           model: config.model,
           messages: [
             { role: 'system', content: '请用中文回答。行内公式请用 $...$ 包裹，块级公式请用 $$...$$ 包裹。' },
+            ...historyMessages,
             { role: 'user', content: userQuestion }
           ]
         }),
