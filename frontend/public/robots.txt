@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://mullenmuse.pages.dev/sitemap.xml

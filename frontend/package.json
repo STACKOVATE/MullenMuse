@@ -1,6 +1,6 @@
 {
-  "name": "frontend",
-  "version": "0.0.0",
+  "name": "mullen-muse-frontend",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -13,6 +13,7 @@
     "format": "prettier --write --experimental-cli src/"
   },
   "dependencies": {
+    "dompurify": "^3.4.12",
     "katex": "^0.18.1",
     "markdown-it": "^15.0.0",
     "markdown-it-texmath": "^1.0.0",

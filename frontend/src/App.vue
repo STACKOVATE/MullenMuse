@@ -21,7 +21,7 @@
               {{ msg.aiName }}
             </span>
             <!-- 关键改动：用 v-html 渲染 Markdown，保留标签样式 -->
-            <span class="markdown-body" v-html="md.render(msg.content)"></span>
+            <span class="markdown-body" v-html="sanitize(md.render(msg.content))"></span>
           </div>
         </div>
       </div>
@@ -61,6 +61,11 @@ import MarkdownIt from 'markdown-it'
 import texmath from 'markdown-it-texmath'
 import katex from 'katex'
 import 'katex/dist/katex.min.css'  // 引入 KaTeX 样式
+import DOMPurify from 'dompurify'
+
+const sanitize = (html) => {
+  return DOMPurify.sanitize(html)
+}
 
 // 创建 markdown-it 实例，启用数学插件
 const md = new MarkdownIt()
