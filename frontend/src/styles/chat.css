@@ -74,6 +74,36 @@
     border: none; /* 无边框 */
 }
 
+/* ========== 自定义滚动条样式 ========== */
+/* WebKit 浏览器（Chrome、Safari、Edge 等）滚动条整体 */
+.chat-box::-webkit-scrollbar {
+    width: 8px; /* 滚动条宽度 */
+}
+
+/* 滚动条轨道（背景槽） */
+.chat-box::-webkit-scrollbar-track {
+    background: transparent; /* 透明轨道 */
+    border-radius: 4px; /* 圆角 */
+}
+
+/* 滚动条滑块（可拖动部分） */
+.chat-box::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.15); /* 半透明白色滑块 */
+    border-radius: 4px; /* 圆角 */
+    transition: background 0.3s ease; /* 平滑过渡动画 */
+}
+
+/* 滑块悬停效果 */
+.chat-box::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.28); /* 悬停时变亮 */
+}
+
+/* Firefox 浏览器滚动条支持 */
+.chat-box {
+    scrollbar-width: thin; /* 细滚动条 */
+    scrollbar-color: rgba(255, 255, 255, 0.15) transparent; /* 滑块颜色和轨道颜色 */
+}
+
 /* 消息包装器 */
 .message-wrapper {
     margin-bottom: 14px; /* 下边距 16px */

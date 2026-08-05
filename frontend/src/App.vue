@@ -56,7 +56,7 @@
 </template>
 
 <script setup>
-import { ref, nextTick, onMounted, onBeforeUnmount } from 'vue'
+import { ref, nextTick, onMounted, onBeforeUnmount, watch } from 'vue'
 import MarkdownIt from 'markdown-it'
 import texmath from 'markdown-it-texmath'
 import katex from 'katex'
@@ -92,49 +92,14 @@ const md = new MarkdownIt()
  */
 
 
+// 这个只用来显示，不包含密钥
 const AI_CONFIGS = {
-  zhipu: {
-    name: '智谱GLM',
-    url: 'https://open.bigmodel.cn/api/paas/v4/chat/completions',
-    key: import.meta.env.VITE_ZHIPU_KEY,
-    model: 'glm-4-flash',
-    color: '#6C5CE7' // 紫色
-  },
-  deepseek: {
-    name: 'Ling',
-    url: 'https://openrouter.ai/api/v1/chat/completions',
-    key: import.meta.env.VITE_OPENROUTER_KEY,
-    model: 'inclusionai/ling-3.0-flash:free',
-    color: '#1890FF' // 蓝色
-  },
-  openrouter: {
-    name: 'GPT-OSS-20B',
-    url: 'https://openrouter.ai/api/v1/chat/completions',
-    key: import.meta.env.VITE_OPENROUTER_KEY,
-    model: 'openai/gpt-oss-20b:free',
-    color: '#00B894' // 绿色
-  },
-  Gemma: {
-    name: 'Gemma-4-26B',
-    url: 'https://openrouter.ai/api/v1/chat/completions',
-    key: import.meta.env.VITE_OPENROUTER_KEY,
-    model: 'google/gemma-4-26b-a4b-it:free',
-    color: '#FFC107' // 黄色
-  },
-  Poolside: {
-    name: 'Laguna S 2.1',
-    url: 'https://openrouter.ai/api/v1/chat/completions',
-    key: import.meta.env.VITE_OPENROUTER_KEY,
-    model: 'poolside/laguna-s-2.1:free',
-    color: '#FF69B4' // 粉色
-  },
-  nvidia: {
-    name: 'Nemotron 3 Ultra 550B',
-    url: 'https://openrouter.ai/api/v1/chat/completions',
-    key: import.meta.env.VITE_OPENROUTER_KEY,
-    model: 'nvidia/nemotron-3-ultra-550b-a55b:free',
-    color: '#FFA500' // 橙色
-  },
+  zhipu: { name: 'GLM-4-flash', color: '#6C5CE7' },
+  ling: { name: 'Ling', color: '#1890FF' },
+  openrouter: { name: 'GLM-5', color: '#00B894' },
+  Gemma: { name: 'Gemma-4-26B', color: '#FFC107' },
+  Poolside: { name: 'Laguna S 2.1', color: '#FF69B4' },
+  nvidia: { name: 'Nemotron 3 Ultra 550B', color: '#FFA500' }
 }
 
 
@@ -149,7 +114,18 @@ const loading = ref(false)
 const chatBox = ref(null)
 
 
-const enabledAIs = ref(['zhipu', 'deepseek'])
+// 从 localStorage 恢复用户选择，默认启用 zhipu 和 ling
+const saved = typeof localStorage !== 'undefined' ? localStorage.getItem('enabledAIs') : null
+const enabledAIs = ref(saved ? JSON.parse(saved) : ['zhipu', 'ling'])
+
+// 持久化用户的勾选到 localStorage
+watch(enabledAIs, (v) => {
+  try {
+    localStorage.setItem('enabledAIs', JSON.stringify(v))
+  } catch (e) {
+    // ignore
+  }
+}, { deep: true })
 
 // 汉堡菜单状态
 const showMenu = ref(false)
@@ -192,102 +168,124 @@ const sendMessage = async () => {
   await nextTick()
   chatBox.value.scrollTop = chatBox.value.scrollHeight
 
-  const totalAI = enabledAIs.value.length
-  let finishedCount = 0
+  // ---------- sendMessage 的核心请求部分 ----------
 
-  // 辅助函数：检查是否所有 AI 都处理完了
-  const checkLoadingDone = () => {
-    if (finishedCount === totalAI) {
-      loading.value = false
+  // 为每个 AI 创建空的消息占位符
+  enabledAIs.value.forEach((key) => {
+    const safeConfig = AI_CONFIGS[key] || { name: key, color: '#999' }
+    const tempAiMessage = {
+      role: 'assistant',
+      aiName: safeConfig.name,
+      content: '',
+      color: safeConfig.color,
+      aiKey: key
     }
-  }
+    messages.value.push(tempAiMessage)
+  })
 
-  await nextTick()
-  chatBox.value.scrollTop = chatBox.value.scrollHeight
+  try {
+    console.log('发送的 enabledAIs:', enabledAIs.value)
 
-  // ---------- 核心：每个 AI 独立请求，带超时控制 ----------
-  enabledAIs.value.forEach(async (key) => {
-    const config = AI_CONFIGS[key]
-
-    // 1. 检查密钥
-    if (!config.key) {
-      messages.value.push({
-        role: 'assistant',
-        aiName: config.name,
-        content: '❌ 未配置密钥',
-        color: config.color
+    // 只发送一次请求，让后端并行处理所有 AI
+    const response = await fetch('/api/chat', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        message: userQuestion,
+        enabledAIs: enabledAIs.value
       })
-      finishedCount++
-      checkLoadingDone()
-      return
-    }
-
-    // 2. 创建 AbortController，设置 15 秒超时
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 15000)
-
-    try {
-      const response = await fetch(config.url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${config.key}`
-        },
-        body: JSON.stringify({
-          model: config.model,
-          messages: [
-            { role: 'system', content: '请用中文回答。行内公式请用 $...$ 包裹，块级公式请用 $$...$$ 包裹。' },
-            ...historyMessages,
-            { role: 'user', content: userQuestion }
-          ]
-        }),
-        signal: controller.signal
-      })
-
-      clearTimeout(timeoutId)
-
-      const rawText = await response.text()
-      let data = null
-      try { data = rawText ? JSON.parse(rawText) : null } catch (e) { data = null }
-      console.log(`[AI:${config.name}] status=${response.status}`, data || rawText)
+    })
 
       if (!response.ok) {
-        messages.value.push({
-          role: 'assistant',
-          aiName: config.name,
-          content: `❌ ${response.status} ${rawText}`,
-          color: config.color
+        const errText = await response.text()
+        throw new Error(`后端错误 ${response.status}: ${errText}`)
+      }
+
+      const reader = response.body?.getReader()
+      if (!reader) {
+        enabledAIs.value.forEach((key) => {
+          const msg = messages.value.find(m => m.aiKey === key && m.role === 'assistant')
+          if (msg) msg.content = '❌ 无法读取流式响应'
         })
-      } else {
-        const reply = (data?.choices?.[0]?.message?.content || data?.result || data?.output?.[0]?.content || rawText || '').toString().trim()
-        messages.value.push({
-          role: 'assistant',
-          aiName: config.name,
-          content: reply || '⚠️ 返回内容为空',
-          color: config.color
-        })
+        loading.value = false
+        return
+      }
+
+      const decoder = new TextDecoder()
+      let buffer = ''
+      let currentEvent = 'message'
+      let closeReceived = false
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
+
+        for (const line of lines) {
+          if (line.startsWith('event: ')) {
+            currentEvent = line.slice(7).trim()
+          } else if (line.startsWith('data: ')) {
+            const raw = line.slice(6).trim()
+            if (!raw || raw === '{}') continue
+
+            try {
+              const data = JSON.parse(raw)
+
+              if (currentEvent === 'delta') {
+                console.log('delta 来了！', data.aiKey, data.content) //这行就是你要加的日志
+                const msg = messages.value.find(m => m.aiKey === data.aiKey && m.role === 'assistant')
+                if (msg) {
+                  msg.content += data.content
+                } else {
+                  console.warn('找不到对应的 AI 消息对象：', data.aiKey) // 加一个警告，以防万一
+                }
+              } else if (currentEvent === 'done') {
+                console.log(`${data.aiKey} 已完成`)
+              } else if (currentEvent === 'error') {
+                messages.value.push({
+                  role: 'assistant',
+                  aiName: data.aiKey || '未知AI',
+                  content: `❌ ${data.error}`,
+                  color: '#EF4444',
+                  aiKey: data.aiKey || 'unknown'
+                })
+              } else if (currentEvent === 'close') {
+
+                loading.value = false
+                console.log('✅ 收到 close 事件，关闭 loading')
+                await nextTick()
+              }
+            } catch (e) {
+              // 忽略非 JSON 数据
+            }
+          }
+        }
+
+        await nextTick()
+        if (chatBox.value) {
+          chatBox.value.scrollTop = chatBox.scrollHeight
+        }
+      }
+
+      if (!closeReceived) {
+        console.warn('⚠️ 流结束但未收到 close 事件，强制关闭 loading')
+        loading.value = false
       }
     } catch (error) {
-      let errorMsg = '请求失败'
-      if (error.name === 'AbortError') {
-        errorMsg = '⏰ 请求超时（超过15秒），请稍后重试'
-      } else {
-        errorMsg = `❌ 网络错误：${error.message}`
-      }
+      console.error('请求后端失败:', error)
       messages.value.push({
         role: 'assistant',
-        aiName: config.name,
-        content: errorMsg,
-        color: config.color
+        aiName: '系统',
+        content: `❌ 连接后端失败：${error.message}。请确保后端已启动（npm run dev）`,
+        color: '#EF4444'
       })
-    } finally {
-      finishedCount++
-      clearTimeout(timeoutId)
-      await nextTick()
-      chatBox.value.scrollTop = chatBox.value.scrollHeight
-      checkLoadingDone()
+      loading.value = false
     }
-  })
 }
 </script>
 
