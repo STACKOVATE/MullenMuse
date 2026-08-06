@@ -92,14 +92,12 @@ const md = new MarkdownIt()
  */
 
 
-// 这个只用来显示，不包含密钥
+// 这个只用来显示，不包含密钥（必须与 functions/api/chat.js 保持一致）
 const AI_CONFIGS = {
-  zhipu: { name: 'GLM-4-flash', color: '#6C5CE7' },
+  zhipu: { name: '智谱GLM', color: '#6C5CE7' },
   ling: { name: 'Ling', color: '#1890FF' },
-  openrouter: { name: 'GLM-5', color: '#00B894' },
-  Gemma: { name: 'Gemma-4-26B', color: '#FFC107' },
-  Poolside: { name: 'Laguna S 2.1', color: '#FF69B4' },
-  nvidia: { name: 'Nemotron 3 Ultra 550B', color: '#FFA500' }
+  openrouter: { name: 'GPT-OSS-20B', color: '#00B894' },
+  gemma: { name: 'Gemma-4-26B', color: '#FFC107' }
 }
 
 
@@ -114,9 +112,9 @@ const loading = ref(false)
 const chatBox = ref(null)
 
 
-// 从 localStorage 恢复用户选择，默认启用 zhipu 和 ling
+// 从 localStorage 恢复用户选择，默认只启用 zhipu（最稳定）
 const saved = typeof localStorage !== 'undefined' ? localStorage.getItem('enabledAIs') : null
-const enabledAIs = ref(saved ? JSON.parse(saved) : ['zhipu', 'ling'])
+const enabledAIs = ref(saved ? JSON.parse(saved) : ['zhipu'])
 
 // 持久化用户的勾选到 localStorage
 watch(enabledAIs, (v) => {

@@ -29,15 +29,23 @@ export async function onRequest(context) {
             name: 'Ling',
             url: 'https://openrouter.ai/api/v1/chat/completions',
             key: env.VITE_OPENROUTER_KEY,
-            model: 'inclusionai/ling-3.0-flash:free'
+            model: 'inclusionai/ling-3.0-flash:free',
+            color: '#1890FF'
         },
         openrouter: {
             name: 'GPT-OSS-20B',
             url: 'https://openrouter.ai/api/v1/chat/completions',
             key: env.VITE_OPENROUTER_KEY,
-            model: 'openai/gpt-oss-20b:free'
+            model: 'openai/gpt-oss-20b:free',
+            color: '#00B894'
+        },
+        gemma: {
+            name: 'Gemma-4-26B',
+            url: 'https://openrouter.ai/api/v1/chat/completions',
+            key: env.VITE_OPENROUTER_KEY,
+            model: 'google/gemma-4-26b-a4b-it:free',
+            color: '#FFC107'
         }
-        // 可以继续添加
     }
 
     // 去重
@@ -70,7 +78,12 @@ export async function onRequest(context) {
                             model: config.model,
                             stream: true,
                             messages: [
-                                { role: 'system', content: '请用中文回答。行内公式用 $...$，块级公式用 $$...$$。' },
+                                {
+                                    role: 'system',
+                                    content: `你是一个专业的AI助手。请始终使用中文回复用户的问题。
+当需要展示数学公式时：简单的行内公式用单个美元符号包裹（例如 $E=mc^2$），复杂的独立公式用双美元符号包裹并单独成行。
+注意：直接给出答案即可，不要提及格式要求或说明你使用了什么格式。`
+                                },
                                 { role: 'user', content: message }
                             ]
                         })

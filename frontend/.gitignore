@@ -37,3 +37,14 @@ __screenshots__/
 
 # Vite
 *.timestamp-*-*.mjs
+
+# Cloudflare Wrangler
+.wrangler/
+
+# 环境变量文件（包含敏感信息）
+.dev.vars
+wrangler.toml
+*.toml
+
+# 部署配置
+DEPLOY.md
