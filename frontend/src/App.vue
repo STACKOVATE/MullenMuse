@@ -124,7 +124,7 @@
                 </div>
 
                 <!-- 生成完成：显示内容 -->
-                <div v-else-if="msg.content" class="summary-content-wrapper" v-html="sanitize(md.render(fixTableSyntax(msg.content)))">
+                <div v-else-if="msg.content" class="summary-content-wrapper markdown-body" v-html="sanitize(md.render(fixTableSyntax(msg.content)))">
                 </div>
               </div>
             </div>
@@ -973,18 +973,20 @@ const cleanContent = (content) => {
   cleaned = cleaned.replace(/\u2028/g, '\n')    // Unicode 行分隔符 → LF
 
   // 🆕 智能修复：检测并修复英文单词间的缺失空格（针对GLM-4等模型的传输问题）
+  // 仅在非 Markdown 语法字符后修复，避免破坏 **bold** 等格式
   cleaned = cleaned.replace(/([a-z])([A-Z])/g, '$1 $2')  // 小写→大写：补空格
-  cleaned = cleaned.replace(/(\w)(\.\d)/g, '$1 $2')     // 单词+数字序号：补空格（如"1."前）
+  cleaned = cleaned.replace(/(\w)(\.\d)/g, '$1 $2')      // 单词+数字序号：补空格
 
   // ✅ 只压缩空格和制表符，严格保留换行符！（Markdown 渲染依赖换行）
   cleaned = cleaned.replace(/[ \t]+/g, ' ')      // 压缩多个空格/Tab为一个空格
 
-  // ============================================
-  // ⚠️ 注意：不在流式传输过程中修改表格语法！
-  // 表格修复应该在最终渲染时进行，而不是在每个delta中
-  // ============================================
+  // 🔑 核心修复：只去除首尾的空格/Tab，但严格保留换行符！
+  // 原因：在流式传输中，每个 delta 末尾的 \n\n 是 Markdown 段落分隔的关键，
+  // 如果被 trim() 删掉，会导致所有依赖换行的格式（标题/列表/表格/代码块）失效
+  cleaned = cleaned.replace(/^[ \t]+/, '')       // 去除开头的空格/Tab
+  cleaned = cleaned.replace(/[ \t]+$/, '')       // 去除末尾的空格/Tab
 
-  return cleaned.trim()
+  return cleaned
 }
 
 // 🔑 最终渲染前的完整表格修复函数（在 md.render() 调用前使用）
@@ -1002,23 +1004,40 @@ const fixTableSyntax = (markdownText) => {
   // 1️⃣ 修复表格前的空行（标题和表格之间必须有空行）
   fixed = fixed.replace(/(#{1,6}\s.*[^\n])\n(\|)/g, '$1\n\n$2')
 
-  // 2️⃣ 修复表格行的 | 符号周围空格（GFM表格要求）
-  fixed = fixed.replace(/\|([^ \t\n\r])/g, '| $1')
-  fixed = fixed.replace(/([^ \t\n\r])\|/g, '$1 |')
+  // 2️⃣ 修复表格数据行的 | 符号周围空格（GFM表格要求）
+  // 🔑 关键：跳过代码块（```）内的内容，且仅处理明确是表格行的行
+  // 策略：逐行处理，只修复以 | 开头或包含 | 的非代码块行
+  const lines = fixed.split('\n')
+  let inCodeBlock = false
+  const processedLines = lines.map((line) => {
+    if (line.trimStart().startsWith('```')) {
+      inCodeBlock = !inCodeBlock
+      return line
+    }
+    if (inCodeBlock) return line
+
+    // 只处理表格行（包含 | 但不以 #>`*- 开头）
+    if (line.includes('|') && !/^\s*(#|>|`|\*|\-|\d+\.)/.test(line.trimStart())) {
+      // 判断是否为分隔符行（仅包含 |、-、:、空格）
+      const isSeparatorRow = /^\|[\s\-:]+\|$/.test(line.trim())
+      if (isSeparatorRow) {
+        // 分隔符行：不移除 | 后面的空格，但确保 | 后紧跟 - 或 :
+        // 修复被错误添加空格的分离符行
+        return line.trim().replace(/\|\s+/g, '|').replace(/\s+\|/g, '|')
+      }
+      // 数据行：确保 | 两侧有空格（美观）
+      let fixedLine = line.replace(/\|([^ \t\n\r])/g, '| $1')
+      fixedLine = fixedLine.replace(/([^ \t\n\r])\|/g, '$1 |')
+      return fixedLine
+    }
+    return line
+  })
+  fixed = processedLines.join('\n')
 
   // 3️⃣ 修复被拆分的表头单元格
   fixed = fixed.replace(/\|\s*\(([^)]+)\)\s*\|/g, ' ($1) |')
 
-  // 4️⃣ 规范化分隔符行
-  fixed = fixed.replace(/^\|[\s\-:]+\|$/gm, (match) => {
-    const cells = match.split('|').filter(c => c.trim())
-    if (cells.length > 0) {
-      return '|' + cells.map(() => ' :--- ').join('|') + '|'
-    }
-    return match
-  })
-
-  // 5️⃣ 移除表格内多余空行
+  // 4️⃣ 移除表格内多余空行
   fixed = fixed.replace(/(\|[^\n]+\|)\n+(?=\|)/g, '$1\n')
 
   return fixed
@@ -1030,18 +1049,32 @@ const rebuildSingleLineTables = (text) => {
   // 特征：一行中有超过3个 | 且长度>50字符
   const lines = text.split('\n')
   const rebuiltLines = []
+  let inCodeBlock = false
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]
+
+    // 跟踪代码块状态
+    if (line.trimStart().startsWith('```')) {
+      inCodeBlock = !inCodeBlock
+      rebuiltLines.push(line)
+      continue
+    }
+    if (inCodeBlock) {
+      rebuiltLines.push(line)
+      continue
+    }
+
     const pipeCount = (line.match(/\|/g) || []).length
 
     // 判断是否为"压缩表格行"
-    // 条件：| 数量 >= 6 且 行长度 > 60 且 不包含代码块标记
+    // 🔑 提高阈值：| 数量 >= 8 且 行长度 > 80，避免误判普通文本
+    // 且排除以 #>`*- 开头的行（标题/引用/列表）
     const isCompressedTable = (
-      pipeCount >= 6 &&
-      line.length > 60 &&
-      !line.startsWith('```') &&
-      !line.trim().startsWith('>')
+      pipeCount >= 8 &&
+      line.length > 80 &&
+      !line.trimStart().startsWith('```') &&
+      !/^\s*(#|>|`|\*|\-|\d+\.)/.test(line.trimStart())
     )
 
     if (isCompressedTable) {
@@ -1314,7 +1347,7 @@ const sendMessage = async () => {
                 addSourceTagsToSummary()
                 
                 await nextTick()
-                scrollToBottom()
+                if (chatBox.value) chatBox.value.scrollTop = chatBox.value.scrollHeight
               }
             } else if (currentEvent === 'done') {
               console.log(`🎯 ${data.aiKey} 回答完成事件`)
@@ -1340,6 +1373,7 @@ const sendMessage = async () => {
               })
             } else if (currentEvent === 'close') {
 
+              closeReceived = true
               loading.value = false
               console.log('✅ 收到 close 事件，关闭 loading')
 
