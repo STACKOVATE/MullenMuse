@@ -1393,7 +1393,7 @@ const sendMessage = async () => {
                 // 如果总结还没显示（可能没收到summary_done），强制显示
                 if (summaryMsg.content.length > 0) {
                   summaryMsg.showSummary = true
-                  console.log('✅ 强制显示综合总结（close事件触发）')
+                  console.log('强制显示综合总结（close事件触发）')
                 }
                 summaryMsg.isGenerating = false
               }
