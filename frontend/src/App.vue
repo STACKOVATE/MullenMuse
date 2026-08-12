@@ -282,9 +282,24 @@ const sanitize = (html) => {
     // 允许使用的HTML标签列表
     ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'code', 'pre', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
                    'ul', 'ol', 'li', 'blockquote', 'table', 'thead', 'tbody', 'tr', 'th', 'td',
-                   'a', 'span', 'div', 'mark', 'sup', 'sub'],
+                   'a', 'span', 'div', 'mark', 'sup', 'sub',
+                   'annotation', 'semantics', 'math', 'mrow', 'mi', 'mo', 'mn', 'msup', 'msub', 'mfrac',
+                   'munder', 'mover', 'munderover', 'msqrt', 'mroot', 'mstyle', 'mtext', 'mpadded',
+                   'mphantom', 'mglyph', 'merror', 'mfenced', 'mspace', 'mlabeledtr', 'mtd', 'mtr',
+                   'none', 'mprescripts', 'multiscripts', 'svg', 'path'],
     // 允许使用的HTML属性列表
-    ALLOWED_ATTR: ['href', 'target', 'class', 'id', 'style', 'title']
+    ALLOWED_ATTR: ['href', 'target', 'class', 'id', 'style', 'title',
+                   'xmlns', 'viewBox', 'd', 'fill', 'stroke', 'stroke-width',
+                   'displaystyle', 'scriptlevel', 'fence', 'separator', 'notation',
+                   'accent', 'accentunder', 'bevelled', 'denomalign', 'linethickness',
+                   'numalign', 'rowspacing', 'columnspacing', 'rowlines', 'columnlines',
+                   'frame', 'framespacing', 'equalrows', 'equalcolumns', 'rowalign',
+                   'columnalign', 'groupalign', 'align', 'alignment', 'charoff',
+                   'chars', 'charalign', 'span', 'width', 'height', 'depth', 'maxsize',
+                   'minsize', 'lquote', 'rquote', 'linelength', 'voffset', 'background',
+                   'color', 'fontfamily', 'fontsize', 'fontstyle', 'fontweight',
+                   'maxwidth', 'minwidth', 'maxheight', 'minheight', 'altimg', 'alttext',
+                   'src', 'encoding', 'definitionURL', 'cd']
   })
 }
 
@@ -795,10 +810,20 @@ const toggleMode = () => {
 
 // 🧠 全自动模式：使用 GLM-5 AI 智能分析用户问题，自动选择模型
 const autoAnalyzeQuestion = async (question) => {
-  // 🚀 快速路径：简单问候语直接返回1个模型（不调用API）
+  // 🚀 快速路径：简单问题直接返回1个模型（不调用API）
+  const q = question.trim()
+
+  // 1. 简单问候语
   const simpleGreetings = /^(你好|您好|嗨|hi|hello|hey|早上好|晚上好|下午好|谢谢|感谢|thank|bye|再见|ok|好的|嗯|哦|啊|哈|呵呵|哈哈|拜拜|goodbye)[\s！!。.,?？~～]*$/i
-  if (simpleGreetings.test(question.trim())) {
+  if (simpleGreetings.test(q)) {
     console.log('⚡ 快速检测到简单问候，直接使用 GLM-5')
+    return ['GLM5']
+  }
+
+  // 2. "XXX是什么/啥/谁/怎么读"等简单定义/解释型问题（短文本+疑问模式）
+  const simpleDefinition = /^.{0,20}(是什么|是啥|是谁|叫什么|怎么读|啥意思|什么意思|指的是|什么是|如何定义)[\s！!？?。.,～~]*$/i
+  if (simpleDefinition.test(q) && q.length < 30) {
+    console.log('⚡ 快速检测到简单定义问题，直接使用 GLM-5')
     return ['GLM5']
   }
 
