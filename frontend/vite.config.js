@@ -23,4 +23,15 @@ export default defineConfig({
       },
     },
   },
+  build: {
+    chunkSizeWarningLimit: 1000,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('katex')) return 'katex'
+          if (id.includes('markdown-it')) return 'markdown'
+        },
+      },
+    },
+  },
 })

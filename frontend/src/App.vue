@@ -19,19 +19,36 @@
 
       <!-- 图一：初始状态（未开始对话）- 欢迎界面 -->
       <transition name="welcome-fade">
-        <div v-if="!hasStarted && messages.length <= 1" class="welcome-screen" key="welcome">
+        <div v-if="!hasStarted && messages.length <= 1" class="welcome-screen" :class="{ 'auto-mode': chatMode === 'auto' }" key="welcome">
           <div class="welcome-content">
             <div class="welcome-icon">
-              <Icon icon="lucide:bot-message-square" :width="48" :height="48" />
+              <Icon :icon="chatMode === 'auto' ? 'lucide:sparkles' : 'lucide:bot-message-square'" :width="48" :height="48" />
             </div>
-            <h2 class="welcome-title">选择AI后提问，他们会同时回答</h2>
+            <h2 class="welcome-title">
+              <template v-if="chatMode === 'auto'">AI 将自动分析你的问题并选择最合适的模型</template>
+              <template v-else>选择 AI 后提问，他们会同时回答</template>
+            </h2>
+
+            <!-- 模式切换 -->
+            <div class="mode-switch-bar">
+              <button class="mode-btn" :class="{ active: chatMode === 'auto' }" @click="chatMode = 'auto'; needSummary = true">
+                <Icon icon="lucide:sparkles" :width="16" :height="16" />
+                <span>全自动</span>
+              </button>
+              <button class="mode-btn" :class="{ active: chatMode === 'manual' }" @click="chatMode = 'manual'">
+                <Icon icon="lucide:settings-2" :width="16" :height="16" />
+                <span>手动</span>
+              </button>
+            </div>
 
             <!-- 居中的输入框 -->
             <div class="welcome-input-area">
-              <button class="select-ai-btn welcome-select-btn" @click.stop.prevent="toggleMenu" title="选择AI">
+              <button class="select-ai-btn welcome-select-btn" @click.stop.prevent="toggleMenu" title="选择AI"
+                :class="{ 'auto-mode-disabled': chatMode === 'auto' }"
+                :style="chatMode === 'auto' ? { opacity: 0, width: '0px', minWidth: '0px', padding: 0, margin: 0, overflow: 'hidden', pointerEvents: 'none', transition: 'all 0.3s ease' } : { opacity: 1, pointerEvents: 'auto', transition: 'all 0.3s ease' }">
                 <Icon icon="lucide:plus" :width="18" :height="18" />
               </button>
-              <textarea v-model="inputText" placeholder="输入你的问题..." @keyup.enter.exact="sendMessage" @keydown.enter.shift.exact.prevent="inputText += '\n'" @input="autoResizeTextarea" :disabled="loading"
+              <textarea v-model="inputText" :placeholder="chatMode === 'auto' ? '输入你的问题，AI 自动匹配模型...' : '输入你的问题...'" @keyup.enter.exact="sendMessage" @keydown.enter.shift.exact.prevent="inputText += '\n'" @input="autoResizeTextarea" :disabled="loading && !verifying"
                 class="welcome-chat-input" rows="1"></textarea>
               <button @click="sendMessage" :disabled="loading || !inputText.trim()" class="welcome-send-btn">
                 <Icon icon="lucide:send" :width="18" :height="18" />
@@ -63,7 +80,15 @@
             </div>
 
             <!-- 提示文字 -->
-            <p class="welcome-disclaimer">内容由AI生成，请仔细甄别</p>
+            <p class="welcome-disclaimer">
+              <template v-if="chatMode === 'auto'">
+                <Icon icon="lucide:sparkles" :width="14" :height="14" style="margin-right: 4px; vertical-align: -2px;" />
+                全自动模式：AI 会根据问题类型自动选择最合适的模型并开启总结
+              </template>
+              <template v-else>
+                内容由AI生成，请仔细甄别
+              </template>
+            </p>
           </div>
         </div>
       </transition>
@@ -77,27 +102,39 @@
               <div class="bubble user-bubble">{{ msg.content }}</div>
             </div>
             <!-- AI普通消息（各模型的回答）- 手风琴式折叠面板 -->
-            <div v-else-if="!msg.isSummary && msg.aiKey" class="message ai-message accordion-message">
-              <div class="accordion-item" :class="{ expanded: msg.expanded }">
+            <div v-else-if="!msg.isSummary && msg.aiKey && !msg.isVerification" class="message ai-message accordion-message">
+              <div class="accordion-item" :class="{ expanded: msg.expanded, 'has-hallucination': msg.hasHallucination }">
                 <!-- 折叠面板标题栏 -->
                 <div class="accordion-header" @click="toggleCollapse(index)">
                   <Icon icon="lucide:bot" :width="16" :height="16" class="accordion-icon" />
                   <span class="ai-tag" :style="{ background: msg.color || '#409EFF' }">
                     {{ msg.aiName }}
                   </span>
-                  <span class="accordion-status" :class="{ 'status-completed': msg.isCompleted && msg.expanded }">
-                    <template v-if="msg.isCompleted && msg.expanded">✓ 回答完成</template>
-                    <template v-else-if="msg.content.length > 0">已生成 {{ msg.content.length }} 字</template>
-                    <template v-else>正在回答...</template>
-                  </span>
-                  <Icon :icon="msg.expanded ? 'lucide:chevron-down' : 'lucide:chevron-right'" :width="16" :height="16"
-                    class="accordion-arrow" />
+                  <!-- 右侧：验证按钮 + 状态 + 展开箭头 -->
+                  <div class="accordion-right">
+                    <span v-if="msg.verificationStatus" class="verify-btn" :class="{ 'is-hallucination': msg.hasHallucination }" :title="msg.verificationText">
+                      <Icon v-if="msg.hasHallucination" icon="lucide:shield-alert" :width="14" :height="14" />
+                      <Icon v-else icon="lucide:shield-check" :width="14" :height="14" />
+                      <span class="verify-label">{{ msg.verificationStatus }}</span>
+                    </span>
+                    <span class="accordion-status" :class="{ 'status-completed': msg.isCompleted && msg.expanded }">
+                      <template v-if="msg.isCompleted && msg.expanded">✓ 回答完成</template>
+                      <template v-else-if="msg.content.length > 0">已生成 {{ msg.content.length }} 字</template>
+                      <template v-else>正在回答...</template>
+                    </span>
+                    <Icon :icon="msg.expanded ? 'lucide:chevron-down' : 'lucide:chevron-right'" :width="16" :height="16"
+                      class="accordion-arrow" />
+                  </div>
                 </div>
 
                 <!-- 折叠面板内容区 -->
                 <transition name="accordion">
                   <div v-show="msg.expanded" class="accordion-content">
-                    <span class="markdown-body" v-html="sanitize(md.render(fixTableSyntax(msg.content)))"></span>
+                    <div v-if="msg.hasHallucination" class="hallucination-warning">
+                      <Icon icon="lucide:alert-triangle" :width="16" :height="16" />
+                      <span>⚠️ 事实核查发现该回答可能存在虚构内容，请谨慎参考</span>
+                    </div>
+                    <span class="markdown-body" :class="{ 'hallucination-content': msg.hasHallucination }" v-html="sanitize(md.render(fixTableSyntax(msg.content)))"></span>
                   </div>
                 </transition>
               </div>
@@ -130,8 +167,24 @@
             </div>
           </div>
           <!-- 加载状态 -->
-          <div v-if="loading" class="loading-text">
-            正在同时询问 {{ enabledAIs.length }} 个AI，请稍候...
+          <div v-if="loading || analyzingQuestion || verifying" class="loading-text">
+            <template v-if="analyzingQuestion && chatMode === 'auto'">
+              <Icon icon="lucide:sparkles" :width="16" :height="16" style="margin-right: 6px; animation: spin 1s linear infinite;" />
+              🧠 GLM-5 正在智能分析你的问题...
+            </template>
+            <template v-else-if="verifying">
+              <Icon icon="lucide:shield-check" :width="16" :height="16" style="margin-right: 6px; animation: pulse 1.5s ease-in-out infinite; color: #f59e0b;" />
+              🔍 GLM-4.7-FlashX 正在联网验证回答真实性...
+            </template>
+            <template v-else-if="loading">
+              <template v-if="chatMode === 'auto'">
+                <Icon icon="lucide:check-circle" :width="14" :height="14" style="margin-right: 4px; color: #10b981;" />
+                已自动选择 {{ enabledAIs.length }} 个{{ enabledAIs.length > 1 ? 'AI' : 'AI' }}，正在回答...
+              </template>
+              <template v-else>
+                正在同时询问 {{ enabledAIs.length }} 个AI，请稍候...
+              </template>
+            </template>
           </div>
         </div>
       </transition>
@@ -140,14 +193,37 @@
     <!-- 底部输入栏 - 只在对话状态显示 -->
     <footer v-if="hasStarted || messages.length > 1" class="bottom-bar">
       <div class="input-area-new">
-        <!-- 左侧：选择AI按钮 -->
-        <button class="select-ai-btn" @click.stop="toggleMenu" title="选择AI">
-          <Icon icon="lucide:plus" :width="18" :height="18" />
-        </button>
+        <!-- 左侧：选择AI按钮 + 模式切换 -->
+        <div class="input-left-group">
+          <button class="select-ai-btn" @click.stop="toggleMenu" title="选择AI"
+            :class="{ 'auto-mode-disabled': chatMode === 'auto' }"
+            :style="chatMode === 'auto' ? { opacity: 0, width: '0px', minWidth: '0px', padding: 0, margin: 0, overflow: 'hidden', pointerEvents: 'none', transition: 'all 0.3s ease' } : { opacity: 1, pointerEvents: 'auto', transition: 'all 0.3s ease' }">
+            <Icon icon="lucide:plus" :width="18" :height="18" />
+          </button>
+
+          <!-- 模式切换按钮组 -->
+          <div class="mode-toggle-mini">
+            <button class="mode-btn-mini" :class="{ active: chatMode === 'auto' }"
+              @click="chatMode = 'auto'; needSummary = true" title="全自动模式">
+              <Icon icon="lucide:sparkles" :width="14" :height="14" />
+            </button>
+            <button class="mode-btn-mini" :class="{ active: chatMode === 'manual' }"
+              @click="chatMode = 'manual'" title="手动模式">
+              <Icon icon="lucide:settings-2" :width="14" :height="14" />
+            </button>
+          </div>
+
+          <!-- 总结开关（仅手动模式显示） -->
+          <button v-if="chatMode === 'manual'" class="summary-toggle-btn"
+            :class="{ active: needSummary }" @click="toggleSummary" :title="needSummary ? '已开启总结' : '已关闭总结'">
+            <Icon icon="lucide:file-text" :width="14" :height="14" />
+            <span class="summary-toggle-text">{{ needSummary ? '总结' : '无总结' }}</span>
+          </button>
+        </div>
 
         <!-- 中间：输入框 -->
         <div class="input-wrapper">
-          <textarea v-model="inputText" placeholder="输入你的问题..." @keyup.enter.exact="sendMessage" @keydown.enter.shift.exact.prevent="inputText += '\n'" @input="autoResizeTextarea" :disabled="loading"
+          <textarea v-model="inputText" :placeholder="chatMode === 'auto' ? '输入你的问题，AI 自动匹配模型...' : '输入你的问题...'" @keyup.enter.exact="sendMessage" @keydown.enter.shift.exact.prevent="inputText += '\n'" @input="autoResizeTextarea" :disabled="loading && !verifying"
             class="chat-input-new" rows="1"></textarea>
         </div>
 
@@ -524,9 +600,16 @@ const messages = ref(savedMessages ? JSON.parse(savedMessages) : defaultMessages
 
 const inputText = ref('')
 const loading = ref(false)
+const analyzingQuestion = ref(false)  // 🆕 全自动模式下分析问题的加载状态
 const chatBox = ref(null)
-const needSummary = ref(true)  // 自动启用总结功能
-const hasStarted = ref(false)  // 是否已开始对话（用于切换界面）
+const chatMode = ref('auto')     // 模式：'auto' 全自动 | 'manual' 手动
+const needSummary = ref(true)    // 是否需要总结（手动模式下可切换，自动模式始终为true）
+const hasStarted = ref(false)    // 是否已开始对话（用于切换界面）
+
+// 验证相关状态
+const verifying = ref(false)
+const verifyResult = ref(null)
+const verifyText = ref('')
 
 // 持久化聊天记录到 localStorage（限制保存最近50条消息，防止存储溢出）
 watch(messages, (v) => {
@@ -540,11 +623,40 @@ watch(messages, (v) => {
 
 // 重置聊天记录
 const resetChat = () => {
+  if (messages.value.length <= 1) {
+    console.log('ℹ️ 没有需要清空的聊天记录')
+    return
+  }
+
   if (confirm('确定要清空所有聊天记录吗？')) {
+    console.log('🗑️ 清空聊天记录')
+
+    // 停止所有正在进行的请求
+    if (window.activeControllers) {
+      window.activeControllers.forEach(controller => {
+        try {
+          controller.abort()
+        } catch (e) {
+          console.warn('中止请求失败:', e)
+        }
+      })
+      window.activeControllers = []
+    }
+
+    // 重置状态
     messages.value = [...defaultMessages]
     localStorage.removeItem('chatMessages')
-    hasStarted.value = false  // 重置为初始状态，回到欢迎界面
-    inputText.value = ''  // 清空输入框
+    hasStarted.value = false
+    inputText.value = ''
+    loading.value = false
+    analyzingQuestion.value = false
+
+    // 重置为默认模式设置
+    if (chatMode.value === 'auto') {
+      enabledAIs.value = ['GLM5']  // 自动模式重置为单模型
+    }
+
+    console.log('✅ 聊天记录已清空，回到初始状态')
   }
 }
 
@@ -575,68 +687,73 @@ watch(enabledAIs, (v) => {
   }
 }, { deep: true })
 
-// 🆕 自动调整 textarea 高度（智能版 - 支持增大和缩小 + 平滑动画）
+// 🆕 自动调整 textarea 高度（动态基准法 - 按元素计算自然高度）
+const GROW_THRESHOLD = 20     // 超过基准多少像素才增高
+const baseHeightCache = new WeakMap()  // 缓存每个 textarea 的自然单行高度
+
+const getBaseHeight = (textarea) => {
+  if (baseHeightCache.has(textarea)) return baseHeightCache.get(textarea)
+
+  const prevHeight = textarea.style.height
+  textarea.style.height = 'auto'
+  void textarea.offsetHeight
+  const naturalHeight = textarea.scrollHeight
+  textarea.style.height = prevHeight || ''
+  baseHeightCache.set(textarea, naturalHeight)
+  return naturalHeight
+}
+
 const autoResizeTextarea = (event) => {
   const textarea = event.target
   if (!textarea || textarea.tagName !== 'TEXTAREA') return
 
-  // 获取当前样式
   const computedStyle = getComputedStyle(textarea)
-  const minHeight = parseFloat(computedStyle.minHeight) || 38
   const maxHeight = parseFloat(computedStyle.maxHeight) || 120
 
-  // 保存当前高度用于比较
-  const currentHeight = parseFloat(textarea.style.height) || minHeight
+  const baseHeight = getBaseHeight(textarea)
+  const currentHeight = parseFloat(textarea.style.height) || baseHeight
 
-  // 🔑 第一步：临时设置为 auto，让浏览器自动计算实际需要的尺寸
-  textarea.style.height = 'auto'
-
-  // 强制浏览器重绘，确保 scrollHeight 准确
-  void textarea.offsetHeight
-
-  // 获取真实的 scrollHeight（此时是最准确的）
-  let scrollHeight = textarea.scrollHeight
-
-  // 🎯 精确修正：去除可能的额外空间（浏览器兼容性处理）
-  const paddingTop = parseFloat(computedStyle.paddingTop) || 0
-  const paddingBottom = parseFloat(computedStyle.paddingBottom) || 0
-  const borderTop = parseFloat(computedStyle.borderTopWidth) || 0
-  const borderBottom = parseFloat(computedStyle.borderBottomWidth) || 0
-
-  // 计算内容实际高度（减去 padding 和 border）
-  const contentAreaHeight = scrollHeight - paddingTop - paddingBottom - borderTop - borderBottom
-
-  // 如果内容很少或为空，直接使用最小高度
-  if (contentAreaHeight <= minHeight * 0.8 || !textarea.value.trim()) {
-    scrollHeight = minHeight
+  // 空内容 → 回到自然单行高度
+  if (!textarea.value.trim()) {
+    if (Math.abs(currentHeight - baseHeight) > 1) {
+      textarea.style.height = baseHeight + 'px'
+    }
+    return
   }
 
-  // 计算最终高度：限制在 min 和 max 之间
-  let finalHeight = Math.min(Math.max(scrollHeight, minHeight), maxHeight)
+  // 测量 scrollHeight
+  textarea.style.height = 'auto'
+  void textarea.offsetHeight
+  const scrollHeight = textarea.scrollHeight
 
-  // 四舍五入避免微小像素差异导致的抖动
+  // 内容不足以换行，保持基准高度
+  if (scrollHeight <= baseHeight + GROW_THRESHOLD) {
+    if (Math.abs(currentHeight - baseHeight) > 1) {
+      textarea.style.height = baseHeight + 'px'
+    }
+    return
+  }
+
+  // 真正需要增高
+  let finalHeight = Math.min(scrollHeight, maxHeight)
   finalHeight = Math.round(finalHeight)
 
-  // ✨ 第二步：使用双帧技术实现平滑过渡动画
   if (Math.abs(currentHeight - finalHeight) > 1) {
-    // 先回到原始高度（触发起始状态）
-    textarea.style.height = currentHeight + 'px'
-
-    // 强制重绘，确保浏览器记录了起始状态
-    void textarea.offsetHeight
-
-    // 在下一帧设置目标高度（触发 CSS 过渡动画）
-    requestAnimationFrame(() => {
-      textarea.style.height = finalHeight + 'px'
-    })
-  } else {
-    // 高度变化很小（< 1px），直接设置，避免不必要的动画
     textarea.style.height = finalHeight + 'px'
   }
 }
 
 // 监听输入文本变化，自动调整高度
 watch(inputText, () => {
+  nextTick(() => {
+    const textareas = document.querySelectorAll('textarea.welcome-chat-input, textarea.chat-input-new')
+    textareas.forEach(textarea => {
+      autoResizeTextarea({ target: textarea })
+    })
+  })
+}, { immediate: true })
+
+onMounted(() => {
   nextTick(() => {
     const textareas = document.querySelectorAll('textarea.welcome-chat-input, textarea.chat-input-new')
     textareas.forEach(textarea => {
@@ -650,9 +767,13 @@ const showMenu = ref(false)
 const menuRef = ref(null)
 const welcomeMenuRef = ref(null)
 
-const toggleMenu = () => { showMenu.value = !showMenu.value }
+const toggleMenu = () => {
+  if (chatMode.value === 'auto') return  // 全自动模式下不允许打开菜单
+  showMenu.value = !showMenu.value
+}
 
 const toggleAI = (key) => {
+  if (chatMode.value === 'auto') return  // 全自动模式下不允许手动切换
   const index = enabledAIs.value.indexOf(key)
   if (index > -1) {
     enabledAIs.value.splice(index, 1)
@@ -660,6 +781,140 @@ const toggleAI = (key) => {
     enabledAIs.value.push(key)
   }
 }
+
+// 🔄 切换模式：全自动 <-> 手动
+const toggleMode = () => {
+  if (chatMode.value === 'auto') {
+    chatMode.value = 'manual'
+    needSummary.value = true  // 手动模式默认开启总结
+  } else {
+    chatMode.value = 'auto'
+    needSummary.value = enabledAIs.value.length >= 2  // 自动模式：≥2个AI才总结
+  }
+}
+
+// 🧠 全自动模式：使用 GLM-5 AI 智能分析用户问题，自动选择模型
+const autoAnalyzeQuestion = async (question) => {
+  // 🚀 快速路径：简单问候语直接返回1个模型（不调用API）
+  const simpleGreetings = /^(你好|您好|嗨|hi|hello|hey|早上好|晚上好|下午好|谢谢|感谢|thank|bye|再见|ok|好的|嗯|哦|啊|哈|呵呵|哈哈|拜拜|goodbye)[\s！!。.,?？~～]*$/i
+  if (simpleGreetings.test(question.trim())) {
+    console.log('⚡ 快速检测到简单问候，直接使用 GLM-5')
+    return ['GLM5']
+  }
+
+  analyzingQuestion.value = true
+
+  try {
+    const glm5Config = AI_CONFIGS['GLM5']
+    if (!glm5Config || !glm5Config.key) {
+      console.warn('GLM-5 配置缺失，使用默认模型')
+      return ['GLM5']
+    }
+
+    const response = await fetch(glm5Config.url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${glm5Config.key}`
+      },
+      body: JSON.stringify({
+        model: glm5Config.model,
+        stream: false,
+        messages: [
+          {
+            role: 'system',
+            content: `你是AI调度助手。根据问题复杂度选1-3个模型。
+
+**核心原则：越简单的问题用越少的AI！**
+
+🟢 **只用1个模型（GLM5）的情况**：
+- 任何形式的打招呼、问候、寒暄
+- 简单的感谢、道歉、告别
+- 极短的问题（<10字）且明显是闲聊
+- "你好"、"谢谢"、"再见"、"OK"、"嗯"、"哈哈"
+- 天气、时间、日期等简单查询
+
+🟡 **用2个模型**：
+- 单一领域的专业/技术问题
+- 需要专业深度+通用知识配合
+
+🔴 **用3个模型**：
+- 明确需要多角度对比分析
+- 跨多个领域的复杂问题
+
+可用模型：GLM5(通用)、emoh(心理)、openrouter(编程)、GLM4f(创作)、GLM5_1(时事)、zhipu(常识)
+
+只返回JSON数组，如 ["GLM5"] 或 ["openrouter","GLM5"]`
+          },
+          { role: 'user', content: question }
+        ]
+      })
+    })
+
+    if (!response.ok) {
+      throw new Error(`GLM-5 分析失败: ${response.status}`)
+    }
+
+    const data = await response.json()
+    const aiResponse = data.choices?.[0]?.message?.content || ''
+
+    console.log('🧠 GLM-5 分析结果:', aiResponse)
+
+    let selectedModels = []
+
+    try {
+      const parsed = JSON.parse(aiResponse.replace(/```json?|```/g, '').trim())
+      if (Array.isArray(parsed)) {
+        selectedModels = parsed
+      }
+    } catch (e) {
+      const validKeys = Object.keys(AI_CONFIGS)
+      const matches = aiResponse.match(/\b(emoh|GLM5|openrouter|GLM4f|GLM5_1|zhipu)\b/gi)
+      if (matches && matches.length > 0) {
+        selectedModels = [...new Set(matches.map(m => m.toLowerCase()))]
+        selectedModels = selectedModels.map(key => {
+          const found = validKeys.find(v => v.toLowerCase() === key)
+          return found || key
+        }).filter(key => AI_CONFIGS[key])
+      }
+    }
+
+    if (selectedModels.length === 0) {
+      console.warn('GLM-5 未返回有效模型，使用默认')
+      selectedModels = ['GLM5']
+    } else if (selectedModels.length > 3) {
+      selectedModels = selectedModels.slice(0, 3)
+    }
+
+    console.log(`✅ 最终选择 (${selectedModels.length}个):`,
+      selectedModels.map(k => `${AI_CONFIGS[k]?.name || k}`)
+    )
+
+    return selectedModels
+
+  } catch (error) {
+    console.error('❌ GLM-5 分析出错:', error)
+    return ['GLM5']
+  } finally {
+    analyzingQuestion.value = false
+  }
+}
+
+// 切换总结开关（仅手动模式可用）
+const toggleSummary = () => {
+  if (chatMode.value === 'manual') {
+    needSummary.value = !needSummary.value
+  }
+}
+
+// 👁️ 监听 enabledAIs 变化，自动调整总结开关
+watch(enabledAIs, (newVal) => {
+  // 手动模式下，如果只选了1个AI，自动关闭总结
+  if (chatMode.value === 'manual' && newVal.length === 1 && needSummary.value) {
+    needSummary.value = false
+    console.log(' 只选了1个AI，自动关闭总结')
+  }
+}, { deep: true })
 
 const onDocClick = (e) => {
   const welcomeMenu = welcomeMenuRef.value
@@ -731,44 +986,93 @@ const getPreviewText = (content) => {
 const highlightDuplicates = (originalContent, summary) => {
   if (!summary || !originalContent) return originalContent
 
-  const summarySentences = summary.split(/(?<=[。！？；\n])/).filter(s => s.trim().length > 5)
+  const stripHtml = (text) => text.replace(/<[^>]*>/g, ' ')
+
+  const plainSummary = stripHtml(summary).replace(/[#*_`\[\](){}\\$~^+=|<>-]/g, ' ').replace(/\s+/g, ' ')
+  const plainOriginal = stripHtml(originalContent).replace(/[#*_`\[\](){}\\$~^+=|<>-]/g, ' ').replace(/\s+/g, ' ')
+
+  const summarySentences = plainSummary.split(/(?<=[。！？；])/).filter(s => s.trim().length > 8)
 
   let highlightedContent = originalContent
+  let totalHighlights = 0
 
   summarySentences.forEach(sentence => {
     const trimmedSentence = sentence.trim()
-    if (trimmedSentence.length < 5) return
+    if (trimmedSentence.length < 8) return
 
     const keywords = trimmedSentence
-      .replace(/[的了吗呢吧啊呀嘛么着过被把让向对从在到和与或但而因所以如果虽然即使]/g, '')
+      .replace(/[了的在是这有和与或但而因所以，。！？；：""''（）《》【】、]/g, '')
       .trim()
 
-    if (keywords.length < 4) return
+    if (keywords.length < 6) return
 
-    const minLength = Math.min(keywords.length, 8)
-    const index = highlightedContent.indexOf(keywords.slice(0, minLength))
+    const searchLength = Math.min(keywords.length, 20)
+    const searchText = keywords.slice(0, searchLength)
 
-    if (index !== -1) {
-      let start = index
-      let end = index + minLength
+    if (!plainOriginal.includes(searchText)) return
 
-      while (start > 0 && !/[。！？；\n]/.test(highlightedContent[start - 1])) {
-        start--
+    try {
+      const escapedSearch = searchText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      const regex = new RegExp(escapedSearch, 'i')
+
+      let safe = 0
+      while (safe < 5) {
+        const match = highlightedContent.match(regex)
+        if (!match || match.index === undefined) break
+
+        let start = match.index
+        let end = match.index + match[0].length
+
+        while (start > 0 && !/[。！？；\n]/.test(highlightedContent[start - 1])) start--
+        while (end < highlightedContent.length && !/[。！？；\n]/.test(highlightedContent[end])) end++
+
+        const textToHighlight = highlightedContent.substring(start, end)
+
+        if (textToHighlight.length >= 12 && !textToHighlight.includes('<mark')) {
+          const highlightedText = `<mark class="duplicate-highlight" title="此内容出现在综合总结中">${textToHighlight}</mark>`
+          highlightedContent = highlightedContent.substring(0, start) + highlightedText + highlightedContent.substring(end)
+          totalHighlights++
+        } else {
+          break
+        }
+
+        safe++
       }
-
-      while (end < highlightedContent.length && !/[。！？；\n]/.test(highlightedContent[end])) {
-        end++
-      }
-
-      const textToHighlight = highlightedContent.substring(start, end)
-      if (textToHighlight.length >= 6) {
-        const highlightedText = `<mark class="duplicate-highlight">${textToHighlight}</mark>`
-        highlightedContent = highlightedContent.substring(0, start) + highlightedText + highlightedContent.substring(end)
-      }
+    } catch (e) {
+      // ignore regex errors
     }
   })
 
+  if (totalHighlights > 0) {
+    console.log(`  🟡 在原始回答中标记了 ${totalHighlights} 处与总结重复的内容`)
+  }
+
   return highlightedContent
+}
+
+const highlightDuplicatesInOriginals = () => {
+  console.log('🔍 开始检测总结与原始回答的重复内容...')
+
+  const summaryMsg = messages.value.find(m => m.isSummary && m.content && m.content.trim().length > 0)
+  if (!summaryMsg) {
+    console.log('⚠️ 未找到总结消息，跳过高亮')
+    return
+  }
+
+  const aiMessages = messages.value.filter(m =>
+    m.aiKey && !m.isSummary && !m.isVerification && m.role === 'assistant' && m.content && m.content.trim().length > 30
+  )
+
+  console.log(`📊 找到 ${aiMessages.length} 个AI回答可用于比对，总结长度: ${summaryMsg.content.length} 字`)
+
+  if (aiMessages.length === 0) return
+
+  aiMessages.forEach(aiMsg => {
+    console.log(`\n🔍 比对 ${aiMsg.aiName} 的回答...`)
+    aiMsg.content = highlightDuplicates(aiMsg.content, summaryMsg.content)
+  })
+
+  console.log(`\n✨ 总结与原始回答重复内容高亮完成`)
 }
 
 const highlightDuplicatesBetweenAIs = () => {
@@ -776,13 +1080,13 @@ const highlightDuplicatesBetweenAIs = () => {
   
   // 先清理所有AI回答中的 #ERROR# 标记
   messages.value.forEach(m => {
-    if (m.aiKey && !m.isSummary && m.content) {
+    if (m.aiKey && !m.isSummary && !m.isVerification && m.content) {
       m.content = cleanContent(m.content)
     }
   })
   
   const aiMessages = messages.value.filter(m => 
-    m.aiKey && !m.isSummary && m.role === 'assistant' && m.content && m.content.trim().length > 30
+    m.aiKey && !m.isSummary && !m.isVerification && m.role === 'assistant' && m.content && m.content.trim().length > 30
   )
   
   console.log(`📊 找到 ${aiMessages.length} 个AI回答`)
@@ -888,7 +1192,7 @@ const addSourceTagsToSummary = () => {
   }
 
   const aiMessages = messages.value.filter(m => 
-    m.aiKey && !m.isSummary && m.role === 'assistant' && m.content && m.content.trim().length > 30
+    m.aiKey && !m.isSummary && !m.isVerification && m.role === 'assistant' && m.content && m.content.trim().length > 30
   )
   
   console.log(`📊 找到 ${aiMessages.length} 个AI回答可用于来源标注`)
@@ -1195,6 +1499,25 @@ const chunkArray = (arr, size) => {
 const sendMessage = async () => {
   if (!inputText.value.trim()) return
   if (loading.value) return
+
+  // 重置验证状态
+  verifying.value = false
+  verifyResult.value = null
+  verifyText.value = ''
+
+  //  全自动模式：使用 GLM-5 AI 智能分析问题并选择模型
+  if (chatMode.value === 'auto') {
+    try {
+      const autoModels = await autoAnalyzeQuestion(inputText.value)
+      enabledAIs.value = autoModels
+      needSummary.value = autoModels.length >= 2  //  只有≥2个AI才总结
+    } catch (error) {
+      console.error('自动分析失败:', error)
+      enabledAIs.value = ['GLM5', 'openrouter']  // 使用默认组合
+      needSummary.value = true  // 默认组合需要总结
+    }
+  }
+
   if (enabledAIs.value.length === 0) {
     showMenu.value = true  // 自动打开AI选择菜单
     return
@@ -1344,6 +1667,7 @@ const sendMessage = async () => {
                 summaryMsg.isGenerating = false
                 
                 highlightDuplicatesBetweenAIs()
+                highlightDuplicatesInOriginals()
                 addSourceTagsToSummary()
                 
                 await nextTick()
@@ -1359,6 +1683,12 @@ const sendMessage = async () => {
                 const aiMsg = aiMessages[aiMessages.length - 1]  // 取最后一个
                 aiMsg.isCompleted = true
                 console.log(`✅ ${data.aiKey} 已标记为完成，内容长度: ${aiMsg.content?.length || 0}`)
+
+                // 如果当前轮次只有一个AI，回答完成后自动展开
+                if (enabledAIs.value.length === 1) {
+                  aiMsg.expanded = true
+                  console.log('🔍 单AI模式，自动展开回答')
+                }
               } else {
                 console.warn(`⚠️ 找不到 ${data.aiKey} 的消息对象！`)
                 console.log('当前所有消息:', messages.value.map(m => ({ aiKey: m.aiKey, isSummary: m.isSummary, role: m.role })))
@@ -1371,6 +1701,34 @@ const sendMessage = async () => {
                 color: '#EF4444',
                 aiKey: data.aiKey || 'unknown'
               })
+            } else if (currentEvent === 'verify_start') {
+              verifying.value = true
+              verifyText.value = ''
+              verifyResult.value = null
+              console.log('🔍 开始验证回答真实性...')
+            } else if (currentEvent === 'verify_delta') {
+              verifyText.value += data.content
+            } else if (currentEvent === 'verify_done') {
+              verifying.value = false
+              verifyResult.value = data
+              console.log(`✅ 验证完成: ${data.hasHallucination ? '⚠️ 发现幻觉' : '✓ 未发现明显幻觉'}`)
+              console.log('验证详情:', data)
+              console.log('verifyText前200字:', verifyText.value.substring(0, 200))
+              console.log('aiVerifications:', data.aiVerifications)
+
+              // 将验证结果存到每个AI消息上
+              messages.value.forEach(m => {
+                if (m.aiKey && !m.isSummary && !m.isVerification) {
+                  const key = m.aiKey
+                  const status = (data.aiVerifications && data.aiVerifications[key]) || '✓可信'
+                  console.log(`为 ${key} 设置验证状态: ${status}`)
+                  m.verificationStatus = status
+                  m.verificationText = verifyText.value
+                  if (status === '⚠️幻觉') {
+                    m.hasHallucination = true
+                  }
+                }
+              })
             } else if (currentEvent === 'close') {
 
               closeReceived = true
@@ -1378,13 +1736,22 @@ const sendMessage = async () => {
               console.log('✅ 收到 close 事件，关闭 loading')
 
               // 🛡️ 保障逻辑：将所有未完成的 AI 强制标记为完成
-              const incompleteAIs = messages.value.filter(m => m.aiKey && !m.isSummary && !m.isCompleted)
+              const incompleteAIs = messages.value.filter(m => m.aiKey && !m.isSummary && !m.isVerification && !m.isCompleted)
               if (incompleteAIs.length > 0) {
                 console.log(`🛡️ 发现 ${incompleteAIs.length} 个未完成的 AI，强制标记为完成:`)
                 incompleteAIs.forEach(ai => {
                   ai.isCompleted = true
                   console.log(`  ✅ ${ai.aiName} (${ai.aiKey}) 已强制完成`)
                 })
+              }
+
+              // 如果当前轮次只有一个AI，强制完成后也自动展开
+              if (enabledAIs.value.length === 1) {
+                const singleAI = messages.value.find(m => m.aiKey && !m.isSummary && !m.expanded)
+                if (singleAI) {
+                  singleAI.expanded = true
+                  console.log('🔍 单AI模式，close事件自动展开回答')
+                }
               }
 
               // 所有AI回答完成，检查是否需要显示总结
@@ -1423,6 +1790,7 @@ const sendMessage = async () => {
         
         console.log('🔄 强制关闭模式：执行高亮处理')
         highlightDuplicatesBetweenAIs()
+        highlightDuplicatesInOriginals()
         addSourceTagsToSummary()
       }
     }

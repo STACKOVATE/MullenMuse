@@ -168,6 +168,7 @@ export async function onRequest(context) {
             await Promise.allSettled(tasks)
 
             // 如果需要总结，使用GLM-5基于所有AI的回答生成综合总结
+            let summaryText = ''
             if (needSummary && Object.keys(aiAnswers).length > 0) {
                 try {
                     const glm5Config = AI_CONFIGS['GLM5']
@@ -227,6 +228,7 @@ export async function onRequest(context) {
                                             const json = JSON.parse(dataStr)
                                             const delta = json.choices?.[0]?.delta?.content
                                             if (delta) {
+                                                summaryText += delta
                                                 sendEvent('summary_delta', { aiKey: 'summary', content: delta })
                                             }
                                         } catch (e) {
@@ -242,6 +244,139 @@ export async function onRequest(context) {
                 } catch (error) {
                     sendEvent('error', { aiKey: 'summary', error: `总结失败: ${error.message}` })
                 }
+            }
+
+            // 验证步骤：使用GLM-4.7-FlashX的网页搜索能力验证所有回答
+            try {
+                const verifyConfig = AI_CONFIGS['GLM4f']
+                console.log('🔍 验证配置:', verifyConfig ? { model: verifyConfig.model, hasKey: !!verifyConfig.key } : '不存在')
+                if (verifyConfig && verifyConfig.key) {
+                    sendEvent('verify_start', {})
+
+                    // 构建验证文本
+                    let verifyText = `请使用网页搜索验证以下AI回答中的事实性内容，检查是否存在幻觉（虚构事实、人物、数据、事件等）。
+
+用户问题：${message}
+
+以下是需要验证的AI回答：
+
+`
+
+                    Object.entries(aiAnswers).forEach(([key, data]) => {
+                        verifyText += `=== 【${data.name}】的回答 ===\n${data.answer}\n\n`
+                    })
+
+                    if (summaryText) {
+                        verifyText += `=== 【综合总结】 ===\n${summaryText}\n\n`
+                    }
+
+                    verifyText += `请逐一验证以上回答中的关键事实、数据、人物、事件、时间、地点等信息。
+对每个AI的回答给出判定：【可信】或【⚠️幻觉】
+如果发现幻觉，请具体指出哪部分内容有问题。
+最后给出整体可信度评估。`
+
+                    const verifyResponse = await fetch(verifyConfig.url, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${verifyConfig.key}`
+                        },
+                        body: JSON.stringify({
+                            model: verifyConfig.model,
+                            stream: true,
+                            tool_web_search: true,
+                            tools: [{ type: 'web_search' }],
+                            messages: [
+                                {
+                                    role: 'system',
+                                    content: `你是一个严格的事实核查助手。你可以使用网页搜索来验证AI回答中的事实性内容。
+工作流程：
+1. 对每个AI回答中的关键事实进行网络搜索验证
+2. 检查是否存在虚构的人物、事件、数据、时间、地点
+3. 对每个AI的回答给出判定：可信或幻觉
+4. 如果发现幻觉，明确指出具体位置
+
+注意：使用中文输出。如果无法验证某项内容，标注为"无法验证"而非判定为幻觉。`
+                                },
+                                { role: 'user', content: verifyText }
+                            ]
+                        })
+                    })
+
+                    if (verifyResponse.ok) {
+                        const reader = verifyResponse.body.getReader()
+                        const decoder = new TextDecoder()
+                        let buffer = ''
+                        let fullVerifyText = ''
+
+                        while (true) {
+                            const { done, value } = await reader.read()
+                            if (done) break
+
+                            buffer += decoder.decode(value, { stream: true })
+                            const lines = buffer.split('\n')
+                            buffer = lines.pop() || ''
+
+                            for (const line of lines) {
+                                if (line.startsWith('data: ')) {
+                                    const dataStr = line.substring(6)
+                                    if (dataStr === '[DONE]') continue
+                                    try {
+                                        const json = JSON.parse(dataStr)
+                                        const delta = json.choices?.[0]?.delta?.content
+                                        if (delta) {
+                                            fullVerifyText += delta
+                                            sendEvent('verify_delta', { content: delta })
+                                        }
+                                    } catch (e) {
+                                        // 忽略非 JSON
+                                    }
+                                }
+                            }
+                        }
+
+                        // 分析验证结果，检测幻觉
+                        const hallucinationPattern = /(幻觉|虚构|不可信|虚假|捏造)/
+                        const hasHallucination = hallucinationPattern.test(fullVerifyText)
+
+                        // 提取每个AI的判定
+                        const aiVerifications = {}
+                        Object.keys(aiAnswers).forEach(key => {
+                            const aiName = aiAnswers[key].name
+                            const escapedName = aiName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+                            const verdictRegex = new RegExp(
+                                `【?${escapedName}】?[^\\n\\r]*(?:判定|结论)?[^\\n\\r]*(可信|⚠️幻觉|幻觉|不可信)`,
+                                'g'
+                            )
+                            const match = fullVerifyText.match(verdictRegex)
+                            if (match) {
+                                aiVerifications[key] = match[0].includes('可信') && !match[0].includes('幻觉')
+                                    ? '可信'
+                                    : '⚠️幻觉'
+                            }
+                        })
+
+                        sendEvent('verify_done', {
+                            hasHallucination,
+                            aiVerifications,
+                            fullText: fullVerifyText
+                        })
+                    } else {
+                        sendEvent('verify_done', {
+                            hasHallucination: false,
+                            aiVerifications: {},
+                            fullText: ''
+                        })
+                    }
+                }
+            } catch (verifyError) {
+                console.warn('验证步骤出错（不影响主流程）:', verifyError.message)
+                console.warn('错误详情:', verifyError)
+                sendEvent('verify_done', {
+                    hasHallucination: false,
+                    aiVerifications: {},
+                    fullText: ''
+                })
             }
 
             sendEvent('close', {})
