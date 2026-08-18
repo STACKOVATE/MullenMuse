@@ -254,9 +254,11 @@ export async function onRequest(context) {
                     sendEvent('verify_start', {})
 
                     // 构建验证文本
-                    let verifyText = `请使用网页搜索验证以下AI回答中的事实性内容，检查是否存在幻觉（虚构事实、人物、数据、事件等）。
+                    let verifyText = `【事实核查任务】请使用网页搜索严格验证以下AI回答的真实性。
 
-用户问题：${message}
+注意：如果用户要求"虚构"、"编造"、"创造"某事物，而AI真的凭空创造了不存在的人物/事件，这属于【幻觉】，必须标记！
+
+用户原始问题：${message}
 
 以下是需要验证的AI回答：
 
@@ -270,10 +272,15 @@ export async function onRequest(context) {
                         verifyText += `=== 【综合总结】 ===\n${summaryText}\n\n`
                     }
 
-                    verifyText += `请逐一验证以上回答中的关键事实、数据、人物、事件、时间、地点等信息。
-对每个AI的回答给出判定：【可信】或【⚠️幻觉】
-如果发现幻觉，请具体指出哪部分内容有问题。
-最后给出整体可信度评估。`
+                    verifyText += `【核查要求】
+1. 搜索验证每个AI回答中的关键人名、地名、事件、数据
+2. 如果回答中出现了现实中不存在的人物（凭空创造的角色），判定为【幻觉】
+3. 即使回答内容"合理"或"详细"，只要事实不存在就是幻觉
+4. 对每个AI给出明确判定：【可信】或【幻觉】
+5. 最后输出格式：
+   - 【GLM-5】：幻觉（原因：...）
+   - 【其他AI】：可信
+   - 整体评估：...`
 
                     const verifyResponse = await fetch(verifyConfig.url, {
                         method: 'POST',
@@ -289,14 +296,24 @@ export async function onRequest(context) {
                             messages: [
                                 {
                                     role: 'system',
-                                    content: `你是一个严格的事实核查助手。你可以使用网页搜索来验证AI回答中的事实性内容。
-工作流程：
-1. 对每个AI回答中的关键事实进行网络搜索验证
-2. 检查是否存在虚构的人物、事件、数据、时间、地点
-3. 对每个AI的回答给出判定：可信或幻觉
-4. 如果发现幻觉，明确指出具体位置
+                                    content: `你是一个极其严格的事实核查AI。你必须使用网页搜索验证所有内容。
 
-注意：使用中文输出。如果无法验证某项内容，标注为"无法验证"而非判定为幻觉。`
+【核心原则】
+- 不存在的人物 = 幻觉（即使描述得很详细、很"合理"）
+- 不存在的事件 = 幻觉
+- 虚构的数据 = 幻觉
+- "无法搜索到" 不等于 "无法验证"，搜不到就标记为可疑
+
+【必须判定为幻觉的情况】
+1. 回答中出现了现实中不存在的人名（凭空创造的虚构角色）
+2. 回答中编造了不存在的历史事件
+3. 回答中的数据无法在任何来源找到
+
+【输出格式】
+对每个AI单独判定，格式：
+【AI名称】：可信 或 幻觉（具体原因）
+
+最后给出整体评估。使用中文。`
                                 },
                                 { role: 'user', content: verifyText }
                             ]
@@ -336,25 +353,31 @@ export async function onRequest(context) {
                         }
 
                         // 分析验证结果，检测幻觉
-                        const hallucinationPattern = /(幻觉|虚构|不可信|虚假|捏造)/
+                        const hallucinationPattern = /(幻觉|虚构|不可信|虚假|捏造|不存在|编造)/
                         const hasHallucination = hallucinationPattern.test(fullVerifyText)
 
-                        // 提取每个AI的判定
+                        // 提取每个AI的判定（支持多种格式）
                         const aiVerifications = {}
                         Object.keys(aiAnswers).forEach(key => {
                             const aiName = aiAnswers[key].name
-                            const escapedName = aiName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-                            const verdictRegex = new RegExp(
-                                `【?${escapedName}】?[^\\n\\r]*(?:判定|结论)?[^\\n\\r]*(可信|⚠️幻觉|幻觉|不可信)`,
-                                'g'
-                            )
-                            const match = fullVerifyText.match(verdictRegex)
-                            if (match) {
-                                aiVerifications[key] = match[0].includes('可信') && !match[0].includes('幻觉')
-                                    ? '可信'
-                                    : '⚠️幻觉'
+                            // 尝试多种匹配模式
+                            let isHallucination = false
+
+                            // 模式1: 【AI名】：⚠️幻觉 或 【AI名】：✓可信
+                            const pattern1 = new RegExp(`【\\s*${aiName}\\s*】[^：:]*[：:]\\s*[⚠️❌]?\\s*幻觉`, 'i')
+                            // 模式2: AI名.*幻觉
+                            const pattern2 = new RegExp(`${aiName}[^\\n]{0,50}(幻觉|虚构|不存在)`, 'i')
+                            // 模式3: 整体文本中提到该AI名附近有幻觉关键词
+                            const pattern3 = new RegExp(`${aiName}[^\\n]{0,100}(⚠️|❌|不可信|虚假)`, 'i')
+
+                            if (pattern1.test(fullVerifyText) || pattern2.test(fullVerifyText)) {
+                                isHallucination = true
                             }
+
+                            aiVerifications[key] = isHallucination ? '幻觉' : '可信'
                         })
+
+                        console.log('🔍 验证结果分析:', { hasHallucination, aiVerifications, fullTextLength: fullVerifyText.length })
 
                         sendEvent('verify_done', {
                             hasHallucination,

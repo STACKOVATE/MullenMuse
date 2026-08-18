@@ -86,6 +86,36 @@
             opacity: 1;
         }
     }
+
+    &.sponsor-link {
+        margin-right: 10px;
+
+        .sponsor-icon {
+            fill: #f472b6;
+            color: #f472b6;
+        }
+
+        &:hover {
+            color: #f472b6;
+            background: rgba(244, 114, 182, 0.08);
+
+            span {
+                background: linear-gradient(135deg, #ec4899, #f472b6);
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+                background-clip: text;
+            }
+
+            .sponsor-icon {
+                fill: #ec4899;
+                color: #ec4899;
+            }
+
+            .external-icon {
+                opacity: 1;
+            }
+        }
+    }
 }
 
 .brand-name {

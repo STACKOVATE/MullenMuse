@@ -7,6 +7,11 @@
         <img src="/MullenMuse.svg" alt="MullenMuse" class="header-logo" />
       </div>
       <div class="header-right">
+        <a href="https://ifdian.net/a/mullenmuse" target="_blank" class="header-brand-link sponsor-link">
+          <Icon icon="lucide:heart" :width="14" :height="14" class="sponsor-icon" />
+          <span>赞助支持</span>
+          <Icon icon="lucide:external-link" :width="14" :height="14" class="external-icon" />
+        </a>
         <a href="https://stackovate.github.io" target="_blank" class="header-brand-link">
           Made By <span class="brand-name">STACKOVATE</span>
           <Icon icon="lucide:external-link" :width="14" :height="14" class="external-icon" />
@@ -130,10 +135,6 @@
                 <!-- 折叠面板内容区 -->
                 <transition name="accordion">
                   <div v-show="msg.expanded" class="accordion-content">
-                    <div v-if="msg.hasHallucination" class="hallucination-warning">
-                      <Icon icon="lucide:alert-triangle" :width="16" :height="16" />
-                      <span>⚠️ 事实核查发现该回答可能存在虚构内容，请谨慎参考</span>
-                    </div>
                     <span class="markdown-body" :class="{ 'hallucination-content': msg.hasHallucination }" v-html="sanitize(md.render(fixTableSyntax(msg.content)))"></span>
                   </div>
                 </transition>
@@ -259,7 +260,7 @@
       </div>
 
       <div class="disclaimer-new">内容由AI生成，请仔细甄别</div>
-    </footer>
+      </footer>
   </div>
 </template>
 
@@ -810,20 +811,11 @@ const toggleMode = () => {
 
 // 🧠 全自动模式：使用 GLM-5 AI 智能分析用户问题，自动选择模型
 const autoAnalyzeQuestion = async (question) => {
-  // 🚀 快速路径：简单问题直接返回1个模型（不调用API）
+  // 🚀 快速路径：仅拦截极简纯问候（不调API）
   const q = question.trim()
-
-  // 1. 简单问候语
-  const simpleGreetings = /^(你好|您好|嗨|hi|hello|hey|早上好|晚上好|下午好|谢谢|感谢|thank|bye|再见|ok|好的|嗯|哦|啊|哈|呵呵|哈哈|拜拜|goodbye)[\s！!。.,?？~～]*$/i
-  if (simpleGreetings.test(q)) {
-    console.log('⚡ 快速检测到简单问候，直接使用 GLM-5')
-    return ['GLM5']
-  }
-
-  // 2. "XXX是什么/啥/谁/怎么读"等简单定义/解释型问题（短文本+疑问模式）
-  const simpleDefinition = /^.{0,20}(是什么|是啥|是谁|叫什么|怎么读|啥意思|什么意思|指的是|什么是|如何定义)[\s！!？?。.,～~]*$/i
-  if (simpleDefinition.test(q) && q.length < 30) {
-    console.log('⚡ 快速检测到简单定义问题，直接使用 GLM-5')
+  const pureGreetings = /^(你好|您好|嗨|hi|hello|hey|早上好|晚上好|下午好|谢谢|感谢|thank|bye|再见|ok|好的)[\s！!。.,?？~～]*$/i
+  if (pureGreetings.test(q)) {
+    console.log('⚡ 纯问候，直接使用 GLM-5')
     return ['GLM5']
   }
 
@@ -850,26 +842,28 @@ const autoAnalyzeQuestion = async (question) => {
             role: 'system',
             content: `你是AI调度助手。根据问题复杂度选1-3个模型。
 
-**核心原则：越简单的问题用越少的AI！**
+**默认倾向：大多数问题用2个AI，只有极简闲聊才用1个！**
 
-🟢 **只用1个模型（GLM5）的情况**：
-- 任何形式的打招呼、问候、寒暄
-- 简单的感谢、道歉、告别
-- 极短的问题（<10字）且明显是闲聊
-- "你好"、"谢谢"、"再见"、"OK"、"嗯"、"哈哈"
-- 天气、时间、日期等简单查询
+🟢 **只用1个模型（GLM5）** — 仅限以下情况：
+- 纯打招呼、问候、寒暄："你好"、"谢谢"、"再见"
+- 极短闲聊（<8字）：如"OK"、"嗯嗯"、"哈哈"
+- 纯时间/天气查询
 
-🟡 **用2个模型**：
-- 单一领域的专业/技术问题
-- 需要专业深度+通用知识配合
+🟡 **默认用2个模型** — 以下情况：
+- 任何知识性/解释性问题（"XXX是什么/怎么"）
+- 单一领域专业问题
+- 需要对比或验证的问题
+- 大多数有实质内容的问题
 
-🔴 **用3个模型**：
-- 明确需要多角度对比分析
-- 跨多个领域的复杂问题
+🔴 **用3个模型** — 以下情况：
+- 跨领域复杂问题
+- 需要多角度深度分析
+- 涉及心理+技术+时事等多维度
 
 可用模型：GLM5(通用)、emoh(心理)、openrouter(编程)、GLM4f(创作)、GLM5_1(时事)、zhipu(常识)
 
-只返回JSON数组，如 ["GLM5"] 或 ["openrouter","GLM5"]`
+只返回JSON数组，如 ["GLM5"] 或 ["openrouter","GLM5"] 或 ["emoh","GLM5","zhipu"]
+**宁多勿少：不确定时优先选2个AI！**`
           },
           { role: 'user', content: question }
         ]
@@ -909,6 +903,20 @@ const autoAnalyzeQuestion = async (question) => {
       selectedModels = ['GLM5']
     } else if (selectedModels.length > 3) {
       selectedModels = selectedModels.slice(0, 3)
+    }
+
+    console.log(`📊 GLM-5返回: [${selectedModels.join(', ')}]`)
+
+    // 🛡️ 硬性规则：非纯问候一律至少2个AI（不管GLM-5怎么说）
+    if (selectedModels.length === 1 && !pureGreetings.test(q)) {
+      console.log('🔄 硬性补选第2个AI')
+      const lowerQ = q.toLowerCase()
+      let secondModel = 'zhipu'
+      if (/代码|编程|python|java|js|前端|后端|开发|debug|api|框架|算法/i.test(lowerQ)) secondModel = 'openrouter'
+      else if (/心理|情绪|焦虑|抑郁|压力|关系|感情|恋爱|婚姻|性格|mbti|人格/i.test(lowerQ)) secondModel = 'emoh'
+      else if (/写|创作|文章|文案|故事|诗歌|翻译|改写|润色|总结/i.test(lowerQ)) secondModel = 'GLM4f'
+      else if (/新闻|时事|政治|经济|军事|国际|社会|热点/i.test(lowerQ)) secondModel = 'GLM5_1'
+      if (!selectedModels.includes(secondModel)) selectedModels.push(secondModel)
     }
 
     console.log(`✅ 最终选择 (${selectedModels.length}个):`,
@@ -1288,18 +1296,53 @@ const addSourceTagsToSummary = () => {
   console.log(`\n🎯 总结来源标注完成，共标记 ${totalSources} 处`)
 }
 
-// ---------- 3.5 内容清理函数 ----------
+// ---------- 3.5 内容可疑度分析（检测普通问题中的幻觉）----------
+const analyzeContentSuspicion = (content, userQuestion) => {
+  let score = 0
+  const text = content || ''
+
+  // 1. 包含具体人名 + 详细生平（像编故事一样详细）
+  if (/(姓名|名字|叫|名为|名叫|本名|原名)\s*[：:]\s*[\u4e00-\u9fa5]{2,4}/.test(text)) score += 1
+  if (/(\d{4})年/.test(text) && /出生|生于|出生于|逝世|去世|卒于/.test(text)) score += 1
+
+  // 2. 过于详细的个人描述（虚构人物常见特征）
+  const detailPatterns = [
+    /外貌特征.*?[\u4e00-\u9fa5]{20,}/,  // 详细外貌描写
+    /性格(特点|标签|特质).*?[\u4e00-\u9fa5]{15,}/,  // 详细性格描述
+    /(童年|少年|青年)时期.*?[\u4e00-\u9fa5]{20,}/,  // 详细成长经历
+    /背景故事.*?[\u4e00-\u9fa5]{30,}/,  // 长篇背景故事
+    /标志性(习惯|口头禅|动作).*?[：:]/,  // 虚构角色的标志性特征
+  ]
+  detailPatterns.forEach(p => { if (p.test(text)) score += 1 })
+
+  // 3. 回答中包含"无法验证"的特定细节
+  if (/(据说|传闻|据传|相传|坊间流传)/.test(text)) score += 0.5
+
+  // 4. 问题问的是事实（谁/什么/哪里/何时），但回答像小说
+  const factualQuestion = /^(谁是|什么是|哪里有|何时|哪年|哪个|多少|怎么).*(\?|？|吗)?$/.test(userQuestion.trim())
+  if (factualQuestion && text.length > 300 && score >= 1) score += 1
+
+  // 5. 包含过于具体的虚构细节（小数点数据、精确到日的日期等）
+  if (/\d+\.\d+/.test(text) && /(米|公斤|厘米|毫米|秒|百分比|%)/.test(text)) score += 0.5
+
+  return Math.min(score, 5)
+}
+
+// ---------- 3.6 内容清理函数 ----------
 const cleanContent = (content) => {
   if (!content) return ''
 
   let cleaned = content
-    .replace(/#ERROR#/g, '')                    // 移除 #ERROR# 标记
+    .replace(/#ERROR#/g, '')
 
-  // 🔧 关键修复：统一换行符格式（兼容 Windows/Mac/Unix）
-  cleaned = cleaned.replace(/\r\n/g, '\n')      // Windows: CRLF → LF
-  cleaned = cleaned.replace(/\r/g, '\n')        // 旧 Mac: CR → LF
-  cleaned = cleaned.replace(/\u0085/g, '\n')    // Unicode NEL → LF
-  cleaned = cleaned.replace(/\u2028/g, '\n')    // Unicode 行分隔符 → LF
+  cleaned = cleaned.replace(/\r\n/g, '\n')
+  cleaned = cleaned.replace(/\r/g, '\n')
+  cleaned = cleaned.replace(/\u0085/g, '\n')
+  cleaned = cleaned.replace(/\u2028/g, '\n')
+
+  // 🔧 修复：去除 Markdown 符号前的反斜杠转义（AI有时会转义 * _ 等）
+// 注意：保留 LaTeX 命令（\frac, \Delta, \int 等），只处理 MD 符号
+cleaned = cleaned.replace(/\\([*_~|`#])/g, '$1')
 
   // 🆕 智能修复：检测并修复英文单词间的缺失空格（针对GLM-4等模型的传输问题）
   // 仅在非 Markdown 语法字符后修复，避免破坏 **bold** 等格式
@@ -1664,7 +1707,12 @@ const sendMessage = async () => {
               const aiMessages = messages.value.filter(m => m.aiKey === data.aiKey && m.role === 'assistant')
               const msg = aiMessages[aiMessages.length - 1] // 取最后一个
               if (msg) {
-                msg.content += cleanContent(data.content)
+                const cleaned = cleanContent(data.content)
+                if (data.content.includes('*') || data.content.includes('$') || data.content.includes('#')) {
+                  console.log('🔤 含Markdown语法的delta:', JSON.stringify(data.content.substring(0, 100)))
+                  console.log('🔤 cleanContent后:', JSON.stringify(cleaned.substring(0, 100)))
+                }
+                msg.content += cleaned
               } else {
                 console.warn('找不到对应的 AI 消息对象：', data.aiKey)
               }
@@ -1741,15 +1789,75 @@ const sendMessage = async () => {
               console.log('verifyText前200字:', verifyText.value.substring(0, 200))
               console.log('aiVerifications:', data.aiVerifications)
 
+              // 🛡️ 前端兜底：基于规则的幻觉检测（不依赖验证AI的判断）
+              const lastUserMsg = [...messages.value].reverse().find(m => m.role === 'user')
+              const userQuestion = lastUserMsg?.content || ''
+
+              // 检测是否为虚构/创作类请求（多维度匹配）
+              const fictionPatterns = [
+                // 直接关键词
+                /虚构|编造|创造|想象|编一个|杜撰|臆造|凭空|发明一个/i,
+                // 创作类
+                /写(一个|一篇|一部)?(故事|小说|人物|角色|传记|生平)/i,
+                /设计(一个)?(角色|人物|形象| persona)/i,
+                /创造(一个)?(角色|人物|形象|世界|文明)/i,
+                /构建(一个)?(虚拟|架空|想象)(的)?(世界|人物|角色|设定)/i,
+                /编(写|造|撰)(一个)?(人物|角色|故事|经历|生平|简历)/i,
+                // 隐晦表达
+                /不存在的(人|人物|角色|国家|城市|组织|公司)/i,
+                /凭空(创造|捏造|编造|想象)(的)?/i,
+                /(假如|假设|如果).*(有个人|有个|存在一个).*叫/i,
+                /给我(想|编|造|设计|创造)一个(人|名字|角色|人物|ID)/i,
+                /扮演(一下)?.*(某个|一个|特定)(角色|人物|身份)/i,
+                // 故事/小说相关
+                /小说(里|中|的)?(主角|人物|角色|原型)/i,
+                /故事(里|中)?(的)?(主人公|主角|人物)/i,
+                /科幻(小说|故事|设定|世界观).(里|中|的)?(人物|角色)/i,
+                // 其他
+                /架空(历史|世界|人物|设定)/i,
+                /原创(角色|人物|IP|形象|设定)/i,
+                /自定义(角色|人物|形象|NPC)/i
+              ]
+
+              const isFictionRequest = fictionPatterns.some(p => p.test(userQuestion))
+
               // 将验证结果存到每个AI消息上
               messages.value.forEach(m => {
                 if (m.aiKey && !m.isSummary && !m.isVerification) {
                   const key = m.aiKey
-                  const status = (data.aiVerifications && data.aiVerifications[key]) || '✓可信'
-                  console.log(`为 ${key} 设置验证状态: ${status}`)
+                  let status
+                  let reason = ''
+
+                  if (isFictionRequest) {
+                    // 虚构请求 → 直接判定为幻觉（不问验证AI）
+                    status = '幻觉'
+                    reason = `用户要求"${userQuestion.substring(0, 30)}"，AI回答内容为虚构创作，非真实事实`
+                    console.log(`规则检测: ${key} 回答了虚构请求 → 强制标记幻觉`)
+                  } else {
+                    // 非虚构请求 → 先用验证AI的结果
+                    status = (data.aiVerifications && data.aiVerifications[key]) || '可信'
+
+                    // 二次校验：即使验证AI说可信，也要检查内容是否可疑
+                    if (status === '可信') {
+                      const content = m.content || ''
+                      const suspicionScore = analyzeContentSuspicion(content, userQuestion)
+
+                      if (suspicionScore >= 3) {
+                        status = '幻觉'
+                        reason = `内容可疑度=${suspicionScore}/5：回答包含过多无法验证的具体细节，可能存在幻觉`
+                        console.log(`二次校验: ${key} 内容可疑度=${suspicionScore} → 覆盖为幻觉`)
+                      } else if (suspicionScore >= 2) {
+                        status = '幻觉'
+                        reason = `内容存疑（可疑度=${suspicionScore}/5）：建议谨慎参考\n\n${verifyText.value}`
+                        console.log(`二次校验: ${key} 可疑度=${suspicionScore} → 标记存疑`)
+                      }
+                    }
+                  }
+
+                  console.log(`为 ${key} 设置验证状态: ${status}${reason ? ' | ' + reason : ''}`)
                   m.verificationStatus = status
-                  m.verificationText = verifyText.value
-                  if (status === '⚠️幻觉') {
+                  m.verificationText = reason || verifyText.value
+                  if (status === '幻觉') {
                     m.hasHallucination = true
                   }
                 }
