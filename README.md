@@ -89,6 +89,10 @@
 
 - 感谢 **Cloudflare** 团队免费提供的无服务器托管服务。
 
+## 🤝 赞助
+
+[支持这个项目](https://ifidian.net/a/mullenmuse)
+
 ## 📝 许可证
 
 MIT License © STACKOVATE
